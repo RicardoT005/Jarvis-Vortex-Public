@@ -1,12 +1,10 @@
 import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
-import sqlite3
 
 # --- CONFIGURACIÓN DE NÚCLEO ---
 st.set_page_config(page_title="JARVIS OS", layout="wide", initial_sidebar_state="collapsed")
 
-# Ocultar rastro de Streamlit
 st.markdown("""
     <style>
         #MainMenu, footer, header {visibility: hidden;}
@@ -36,20 +34,22 @@ def jarvis_brain(prompt):
     except Exception as e:
         return f"ERROR: Reactor inestable. {e}"
 
-# --- DETECCIÓN DE MENSAJE ---
-query_params = st.query_params
-user_msg = query_params.get("chat", "")
-
-if user_msg and user_msg != st.session_state.get("last_msg", ""):
-    resp = jarvis_brain(user_msg)
-    st.session_state.chat_log += f'<div class="msg user"><strong>RICARDO:</strong> {user_msg}</div>'
-    st.session_state.chat_log += f'<div class="msg jarvis"><strong>JARVIS:</strong> {resp}</div>'
-    st.session_state.last_msg = user_msg
+# --- DETECCIÓN DE MENSAJE POR URL ---
+params = st.query_params
+if "chat" in params:
+    user_msg = params["chat"]
+    if user_msg != st.session_state.get("last_msg", ""):
+        resp = jarvis_brain(user_msg)
+        st.session_state.chat_log += f'<div class="msg user"><strong>RICARDO:</strong> {user_msg}</div>'
+        st.session_state.chat_log += f'<div class="msg jarvis"><strong>JARVIS:</strong> {resp}</div>'
+        st.session_state.last_msg = user_msg
+        # Limpiamos el parámetro de la URL internamente para evitar bucles
+        st.query_params.clear()
 
 # --- RENDER FINAL ---
 try:
     with open("index.html", "r", encoding="utf-8") as f:
-        html = f.read().replace("", st.session_state.chat_log)
-    components.html(html, height=1500)
+        html_code = f.read().replace("", st.session_state.chat_log)
+    components.html(html_code, height=1500)
 except Exception as e:
-    st.error(e)
+    st.error(f"Error al cargar interfaz: {e}")
