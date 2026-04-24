@@ -25,7 +25,6 @@
             overflow: hidden;
         }
 
-        /* --- NÚCLEO VORTEX --- */
         .vortex-header {
             height: 140px;
             width: 100%;
@@ -60,7 +59,6 @@
             100% { transform: scale(3.5); opacity: 0; border-color: var(--purple); }
         }
 
-        /* --- MONITOR DE REACTORES --- */
         .reactor-monitor {
             width: 92%;
             max-width: 450px;
@@ -71,7 +69,6 @@
             margin: 0 auto;
             border: 1px solid rgba(255, 255, 255, 0.08);
             z-index: 10;
-            flex-shrink: 0;
         }
 
         .reactor-item { margin-bottom: 8px; }
@@ -82,7 +79,6 @@
             display: flex;
             justify-content: space-between;
             margin-bottom: 4px;
-            opacity: 0.8;
         }
 
         .progress-bar {
@@ -95,10 +91,8 @@
         .progress-fill {
             height: 100%;
             background: var(--vortex-grad);
-            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        /* --- CONTENEDOR DE CHAT (VACÍO AL INICIO) --- */
         .chat-container {
             flex-grow: 1;
             width: 100%;
@@ -109,9 +103,7 @@
             display: flex;
             flex-direction: column;
             gap: 18px;
-            scrollbar-width: none; /* Ocultar scroll en Firefox */
         }
-        .chat-container::-webkit-scrollbar { display: none; } /* Ocultar en Chrome/Safari */
 
         .msg {
             padding: 14px 20px;
@@ -119,37 +111,15 @@
             font-size: 0.95rem;
             max-width: 88%;
             line-height: 1.5;
-            animation: fadeIn 0.4s ease;
         }
 
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .jarvis { background: rgba(0, 242, 254, 0.05); border-left: 2px solid var(--cyan); align-self: flex-start; }
+        .user { background: rgba(255, 255, 255, 0.06); align-self: flex-end; }
 
-        .jarvis { 
-            background: linear-gradient(135deg, rgba(0, 242, 254, 0.05), rgba(79, 172, 254, 0.05)); 
-            border-left: 2px solid var(--cyan); 
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
-        }
-
-        .user { 
-            background: rgba(255, 255, 255, 0.06); 
-            align-self: flex-end; 
-            border-bottom-right-radius: 4px;
-            color: #efefef;
-        }
-
-        /* --- ENTRADA --- */
         .input-area {
             width: 100%;
             padding: 15px 20px 30px 20px;
             background: linear-gradient(to top, var(--bg-deep) 80%, transparent);
-            flex-shrink: 0;
-        }
-
-        .input-wrapper {
-            max-width: 800px;
-            margin: 0 auto;
-            position: relative;
         }
 
         input {
@@ -161,19 +131,6 @@
             color: white;
             outline: none;
             font-size: 1rem;
-            transition: 0.3s;
-        }
-
-        input:focus {
-            border-color: var(--cyan);
-            background: rgba(255,255,255,0.07);
-            box-shadow: 0 0 20px rgba(0, 242, 254, 0.15);
-        }
-
-        @media (max-width: 600px) {
-            .vortex-header { height: 110px; }
-            .msg { font-size: 0.9rem; max-width: 92%; }
-            .reactor-monitor { padding: 10px 14px; }
         }
     </style>
 </head>
@@ -187,16 +144,12 @@
 
     <div class="reactor-monitor">
         <div class="reactor-item">
-            <div class="reactor-label"><span>REACTOR PRINCIPAL</span> <span id="val1">100k</span></div>
-            <div class="progress-bar"><div class="progress-fill" id="bar1" style="width: 100%;"></div></div>
+            <div class="reactor-label"><span>REACTOR PRINCIPAL</span> <span>ACTIVO</span></div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 100%;"></div></div>
         </div>
         <div class="reactor-item">
-            <div class="reactor-label"><span>MÓDULO DE DATOS</span> <span id="val2">100k</span></div>
-            <div class="progress-bar"><div class="progress-fill" id="bar2" style="width: 100%;"></div></div>
-        </div>
-        <div class="reactor-item">
-            <div class="reactor-label"><span>NÚCLEO EMERGENCIA</span> <span id="val3">100k</span></div>
-            <div class="progress-bar"><div class="progress-fill" id="bar3" style="width: 100%;"></div></div>
+            <div class="reactor-label"><span>MÓDULO DE DATOS</span> <span>STANDBY</span></div>
+            <div class="progress-bar"><div class="progress-fill" style="width: 100%;"></div></div>
         </div>
     </div>
 
@@ -204,35 +157,24 @@
         </div>
 
     <div class="input-area">
-        <div class="input-wrapper">
-            <input type="text" id="userInput" placeholder="Esperando órdenes, Ricardo..." autocomplete="off">
-        </div>
+        <input type="text" id="userInput" placeholder="Esperando órdenes, Ricardo..." autocomplete="off">
     </div>
 
     <script>
         const input = document.getElementById('userInput');
         const chat = document.getElementById('chat');
 
-        function addMessage(role, text) {
-            const div = document.createElement('div');
-            div.className = `msg ${role}`;
-            div.innerHTML = `<strong>${role === 'user' ? 'RICARDO' : 'JARVIS'}:</strong> ${text}`;
-            chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
-        }
-
+        // Función vital para que Python reciba el mensaje
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && input.value.trim() !== "") {
-                const text = input.value;
-                addMessage('user', text);
-                input.value = "";
-                
-                // Simulación de respuesta de Jarvis
-                setTimeout(() => {
-                    addMessage('jarvis', "Núcleo Vortex activo. Procesando tu solicitud, Ricardo...");
-                }, 1000);
+                const query = encodeURIComponent(input.value);
+                // Enviamos el mensaje al cerebro (Python) recargando la vista
+                window.parent.location.search = `?chat=${query}`;
             }
         });
+
+        // Auto-scroll al final
+        window.onload = () => chat.scrollTop = chat.scrollHeight;
     </script>
 </body>
 </html>
