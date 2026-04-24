@@ -17,17 +17,16 @@
         body {
             background: var(--bg-deep);
             color: #fff;
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             margin: 0;
             height: 100vh;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
+            overflow: hidden; /* Evita scroll doble en la página principal */
         }
 
         .vortex-header {
-            height: 140px;
-            width: 100%;
+            height: 120px;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -36,18 +35,18 @@
         }
 
         .core-center {
-            width: 45px;
-            height: 45px;
+            width: 40px;
+            height: 40px;
             background: var(--vortex-grad);
             border-radius: 50%;
-            box-shadow: 0 0 35px var(--cyan);
+            box-shadow: 0 0 30px var(--cyan);
             z-index: 5;
         }
 
         .pulse {
             position: absolute;
-            width: 45px;
-            height: 45px;
+            width: 40px;
+            height: 40px;
             border: 1.5px solid var(--cyan);
             border-radius: 50%;
             animation: pulse-out 3s infinite ease-out;
@@ -56,78 +55,59 @@
 
         @keyframes pulse-out {
             0% { transform: scale(1); opacity: 0.8; }
-            100% { transform: scale(3.5); opacity: 0; border-color: var(--purple); }
+            100% { transform: scale(3); opacity: 0; border-color: var(--purple); }
         }
 
         .reactor-monitor {
-            width: 92%;
-            max-width: 450px;
+            width: 90%;
+            max-width: 400px;
             background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(12px);
-            border-radius: 20px;
-            padding: 12px 18px;
-            margin: 0 auto;
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 10px;
+            margin: 0 auto 10px;
             border: 1px solid rgba(255, 255, 255, 0.08);
-            z-index: 10;
+            flex-shrink: 0;
         }
 
-        .reactor-item { margin-bottom: 8px; }
-        .reactor-label {
-            font-size: 0.65rem;
-            letter-spacing: 1.5px;
-            color: var(--cyan);
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 4px;
-        }
+        .reactor-label { font-size: 0.6rem; color: var(--cyan); display: flex; justify-content: space-between; margin-bottom: 3px; }
+        .progress-bar { height: 2px; background: rgba(255,255,255,0.05); margin-bottom: 5px; }
+        .progress-fill { height: 100%; background: var(--vortex-grad); }
 
-        .progress-bar {
-            height: 3px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 2px;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: var(--vortex-grad);
-        }
-
+        /* EL CHAT AHORA SE AJUSTA AUTOMÁTICAMENTE */
         .chat-container {
-            flex-grow: 1;
+            flex-grow: 1; /* Toma todo el espacio disponible */
             width: 100%;
-            max-width: 850px;
+            max-width: 800px;
             margin: 0 auto;
-            padding: 25px 20px;
-            overflow-y: auto;
+            padding: 10px 20px;
+            overflow-y: auto; /* Solo esta parte tiene scroll */
             display: flex;
             flex-direction: column;
-            gap: 18px;
+            gap: 15px;
         }
 
-        .msg {
-            padding: 14px 20px;
-            border-radius: 18px;
-            font-size: 0.95rem;
-            max-width: 88%;
-            line-height: 1.5;
-        }
-
+        .msg { padding: 12px 16px; border-radius: 15px; font-size: 0.9rem; line-height: 1.4; }
         .jarvis { background: rgba(0, 242, 254, 0.05); border-left: 2px solid var(--cyan); align-self: flex-start; }
-        .user { background: rgba(255, 255, 255, 0.06); align-self: flex-end; }
+        .user { background: rgba(255, 255, 255, 0.06); align-self: flex-end; color: #efefef; }
 
+        /* EL INPUT SIEMPRE VISIBLE */
         .input-area {
             width: 100%;
-            padding: 15px 20px 30px 20px;
-            background: linear-gradient(to top, var(--bg-deep) 80%, transparent);
+            padding: 15px 20px;
+            background: #0d0e14;
+            flex-shrink: 0; /* No permite que se encoja */
         }
 
         input {
             width: 100%;
-            background: rgba(255,255,255,0.04);
-            border: 1px solid rgba(0,242,254,0.2);
-            border-radius: 30px;
-            padding: 14px 24px;
+            max-width: 800px;
+            display: block;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(0,242,254,0.3);
+            border-radius: 25px;
+            padding: 12px 20px;
             color: white;
             outline: none;
             font-size: 1rem;
@@ -143,38 +123,28 @@
     </div>
 
     <div class="reactor-monitor">
-        <div class="reactor-item">
-            <div class="reactor-label"><span>REACTOR PRINCIPAL</span> <span>ACTIVO</span></div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 100%;"></div></div>
-        </div>
-        <div class="reactor-item">
-            <div class="reactor-label"><span>MÓDULO DE DATOS</span> <span>STANDBY</span></div>
-            <div class="progress-bar"><div class="progress-fill" style="width: 100%;"></div></div>
-        </div>
+        <div class="reactor-label"><span>REACTOR VORTEX</span> <span>100%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width: 100%;"></div></div>
     </div>
 
     <div class="chat-container" id="chat">
         </div>
 
     <div class="input-area">
-        <input type="text" id="userInput" placeholder="Esperando órdenes, Ricardo..." autocomplete="off">
+        <input type="text" id="userInput" placeholder="Escriba a Jarvis..." autocomplete="off">
     </div>
 
     <script>
         const input = document.getElementById('userInput');
         const chat = document.getElementById('chat');
 
-        // Función vital para que Python reciba el mensaje
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && input.value.trim() !== "") {
-                const query = encodeURIComponent(input.value);
-                // Enviamos el mensaje al cerebro (Python) recargando la vista
-                window.parent.location.search = `?chat=${query}`;
+                window.parent.location.search = `?chat=${encodeURIComponent(input.value)}`;
             }
         });
 
-        // Auto-scroll al final
-        window.onload = () => chat.scrollTop = chat.scrollHeight;
+        window.onload = () => { chat.scrollTop = chat.scrollHeight; };
     </script>
 </body>
 </html>
