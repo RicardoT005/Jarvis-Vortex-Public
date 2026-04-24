@@ -8,90 +8,61 @@
         :root { --c: #00f2fe; --p: #4facfe; --bg: #050609; }
         body { background: var(--bg); color: #fff; font-family: sans-serif; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
-        /* Cabecera y Núcleo */
-        .v { height: 100px; display: flex; justify-content: center; align-items: center; position: relative; }
-        .core { width: 35px; height: 35px; background: linear-gradient(135deg, var(--c), var(--p)); border-radius: 50%; box-shadow: 0 0 20px var(--c); z-index: 5; }
-        .pulse { position: absolute; width: 35px; height: 35px; border: 1px solid var(--c); border-radius: 50%; animation: pulse 3s infinite; }
-        @keyframes pulse { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(3.5); opacity: 0; } }
+        .v { height: 80px; display: flex; justify-content: center; align-items: center; position: relative; flex-shrink: 0; }
+        .core { width: 30px; height: 30px; background: linear-gradient(135deg, var(--c), var(--p)); border-radius: 50%; box-shadow: 0 0 15px var(--c); z-index: 5; }
+        .pulse { position: absolute; width: 30px; height: 30px; border: 1px solid var(--c); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { transform: scale(1); opacity: 0.8; } 100% { transform: scale(4); opacity: 0; } }
 
-        /* Contenedor de Chat */
-        #chat { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; }
-        .msg { padding: 10px 15px; border-radius: 12px; font-size: 0.9rem; max-width: 85%; line-height: 1.4; }
+        #chat { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
+        .msg { padding: 10px 15px; border-radius: 12px; font-size: 0.9rem; max-width: 85%; line-height: 1.4; animation: fadeIn 0.3s ease; }
         .jarvis { background: rgba(0,242,254,0.05); border-left: 2px solid var(--c); align-self: flex-start; }
         .user { background: rgba(255,255,255,0.07); align-self: flex-end; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
-        /* Área de Entrada AJUSTADA */
-        .input-box { 
-            padding: 15px; 
-            background: #0a0b10; 
-            display: flex; 
-            gap: 10px; 
-            align-items: center; 
-            border-top: 1px solid rgba(0,242,254,0.1);
-        }
-        input { 
-            flex-grow: 1; 
-            background: rgba(255,255,255,0.05); 
-            border: 1px solid var(--c); 
-            border-radius: 20px; 
-            padding: 10px 15px; 
-            color: #fff; 
-            outline: none; 
-        }
+        .input-box { padding: 15px; background: #0a0b10; display: flex; gap: 10px; align-items: center; border-top: 1px solid rgba(0,242,254,0.1); }
+        input { flex-grow: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--c); border-radius: 20px; padding: 12px 15px; color: #fff; outline: none; transition: 0.3s; }
+        input:disabled { opacity: 0.5; border-color: gray; }
         
-        /* Botón Enviar para Celular */
-        #sendBtn {
-            background: var(--c);
-            color: #000;
-            border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            font-weight: bold;
-            cursor: pointer;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            box-shadow: 0 0 10px var(--c);
-        }
+        #sendBtn { background: var(--c); color: #000; border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: 0.3s; }
+        #sendBtn:active { transform: scale(0.9); background: var(--p); }
     </style>
 </head>
 <body>
     <div class="v"><div class="pulse"></div><div class="core"></div></div>
     <div id="chat"></div>
     <div class="input-box">
-        <input type="text" id="in" placeholder="Comando..." autocomplete="off">
+        <input type="text" id="in" placeholder="Escriba a Jarvis..." autocomplete="off">
         <button id="sendBtn">➤</button>
     </div>
 
     <script>
         const i = document.getElementById('in');
         const b = document.getElementById('sendBtn');
+        const c = document.getElementById('chat');
 
         function enviar() {
-            if (i.value.trim() !== "") {
-                const url = new URL(window.parent.location.href);
-                url.searchParams.set('chat', i.value);
-                window.parent.location.href = url.href;
+            const val = i.value.trim();
+            if (val !== "") {
+                // Confirmación visual de envío
+                b.innerHTML = "⌛";
+                b.style.opacity = "0.5";
+                i.disabled = true;
+                
+                // Usamos window.top para asegurarnos que Streamlit reciba la orden
+                const parentUrl = new URL(window.top.location.href);
+                parentUrl.searchParams.set('chat', val);
+                window.top.location.href = parentUrl.href;
             }
         }
 
-        // Detectar ENTER en PC y Celular
-        i.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                enviar();
-            }
-        });
-
-        // Detectar CLIC en botón
+        i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); enviar(); } });
         b.addEventListener('click', enviar);
 
-        // Auto-scroll y Focus
-        window.onload = () => {
-            const c = document.getElementById('chat');
-            c.scrollTop = c.scrollHeight;
+        window.onload = () => { 
+            c.scrollTop = c.scrollHeight; 
             i.focus();
+            // Si hay un mensaje pendiente en el historial, bajamos el scroll
+            setTimeout(() => { c.scrollTop = c.scrollHeight; }, 500);
         };
     </script>
 </body>
