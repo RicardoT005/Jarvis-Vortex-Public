@@ -1,83 +1,91 @@
 import streamlit as st
-from groq import Groq
 import sqlite3
 import os
+from groq import Groq
 
 st.set_page_config(page_title="JARVIS OS", layout="wide")
 
-# --- ESTILO JARVIS ---
-st.markdown("""
-<style>
-body {
-    background-color: #050609;
-}
-.stChatMessage.user {
-    background-color: rgba(255,255,255,0.07);
-    border-radius: 10px;
-}
-.stChatMessage.assistant {
-    background-color: rgba(0,242,254,0.1);
-    border-left: 3px solid #00f2fe;
-    border-radius: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
+DB_NAME = "jarvis_memoria.db"
 
-# --- BASE DE DATOS ---
-def buscar_memoria(texto):
+# --- DB ---
+def conectar():
+    return sqlite3.connect(DB_NAME)
+
+def guardar_mensaje(rol, mensaje):
+    conn = conectar()
+    c = conn.cursor()
+    c.execute("INSERT INTO chat_log (rol, mensaje) VALUES (?, ?)", ("model" if rol=="assistant" else rol, mensaje))
+    conn.commit()
+    conn.close()
+
+def obtener_contexto():
+    conn = conectar()
+    c = conn.cursor()
+
+    # memoria larga
     try:
-        DB_PATH = os.path.join(os.getcwd(), "jarvis_memoria.db")
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT respuesta FROM memoria WHERE pregunta LIKE ?", (f'%{texto}%',))
-        res = cursor.fetchone()
-        conn.close()
-        return res[0] if res else None
+        c.execute("SELECT contenido FROM resumenes")
+        memoria = "\n".join([x[0] for x in c.fetchall()])
     except:
-        return None
+        memoria = ""
+
+    # memoria corta
+    c.execute("SELECT rol, mensaje FROM chat_log ORDER BY id DESC LIMIT 8")
+    filas = c.fetchall()
+    conn.close()
+
+    historial = []
+    for rol, msg in reversed(filas):
+        r = "assistant" if rol == "model" else rol
+        historial.append({"role": r, "content": msg})
+
+    return memoria, historial
 
 # --- IA ---
-def llamar_a_groq(prompt):
-    memoria = buscar_memoria(prompt)
-    if memoria:
-        return f"{memoria} (Memoria Local)"
+def llamar_jarvis(prompt):
+    memoria, historial = obtener_contexto()
 
-    try:
-        client = Groq(api_key=st.secrets["GROQ_KEY_1"])
+    client = Groq(api_key=st.secrets["GROQ_KEY_1"])
 
-        chat_completion = client.chat.completions.create(
-            model="llama-3.1-8b-instant",  # ← CAMBIO CLAVE
-            messages=[
-                {"role": "system", "content": "Eres JARVIS, elegante y directo."},
-                {"role": "user", "content": prompt}
-            ]
-        )
+    system = f"""
+    MEMORIA:
+    {memoria}
 
-        return chat_completion.choices[0].message.content
+    Eres JARVIS.
+    Recuerdas a Ricardo.
+    Eres preciso, elegante y lógico.
+    """
 
-    except Exception as e:
-        return f"ERROR REAL: {str(e)}"
-# --- HISTORIAL ---
+    messages = [{"role": "system", "content": system}]
+    messages.extend(historial)
+    messages.append({"role": "user", "content": prompt})
+
+    res = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=messages
+    )
+
+    return res.choices[0].message.content
+
+# --- UI ---
+st.title("🔘 JARVIS VORTEX (RESTORE)")
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# --- MOSTRAR MENSAJES ---
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
+# mostrar chat
+for m in st.session_state.messages:
+    with st.chat_message(m["role"]):
+        st.markdown(m["content"])
 
-# --- INPUT ---
-prompt = st.chat_input("Habla con JARVIS...")
-
-if prompt:
-    # Usuario
+# input
+if prompt := st.chat_input("Habla con JARVIS"):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    guardar_mensaje("user", prompt)
 
-    # IA
-    respuesta = llamar_a_groq(prompt)
+    with st.chat_message("assistant"):
+        respuesta = llamar_jarvis(prompt)
+        st.markdown(respuesta)
 
     st.session_state.messages.append({"role": "assistant", "content": respuesta})
-    with st.chat_message("assistant"):
-        st.markdown(respuesta)
+    guardar_mensaje("assistant", respuesta)
