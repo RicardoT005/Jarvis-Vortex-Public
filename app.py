@@ -59,7 +59,7 @@ if "chat" in params:
 # --- CARGA DE INTERFAZ ---
 try:
     with open("index.html", "r", encoding="utf-8") as f:
-        html_code = f.read().replace("", st.session_state.historial)
+        html_code = f.read().replace("{{CHAT}}", st.session_state.historial)
     components.html(html_code, height=1500)
 except Exception as e:
     st.error(f"Error cargando HTML: {e}")
