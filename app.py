@@ -40,15 +40,21 @@ def llamar_a_groq(prompt):
     if memoria:
         return f"{memoria} (Memoria Local)"
 
-    client = Groq(api_key=st.secrets["GROQ_KEY_1"])
-    chat_completion = client.chat.completions.create(
-        model="llama3-70b-8192",
-        messages=[
-            {"role": "system", "content": "Eres JARVIS, elegante, preciso y directo."},
-            {"role": "user", "content": prompt}
-        ]
-    )
-    return chat_completion.choices[0].message.content
+    try:
+        client = Groq(api_key=st.secrets["GROQ_KEY_1"])
+
+        chat_completion = client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[
+                {"role": "system", "content": "Eres JARVIS, elegante y directo."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        return chat_completion.choices[0].message.content
+
+    except Exception as e:
+        return f"ERROR REAL: {str(e)}"
 
 # --- HISTORIAL ---
 if "messages" not in st.session_state:
