@@ -44,7 +44,7 @@ def llamar_a_groq(prompt):
         client = Groq(api_key=st.secrets["GROQ_KEY_1"])
 
         chat_completion = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",  # ← CAMBIO CLAVE
             messages=[
                 {"role": "system", "content": "Eres JARVIS, elegante y directo."},
                 {"role": "user", "content": prompt}
@@ -55,7 +55,6 @@ def llamar_a_groq(prompt):
 
     except Exception as e:
         return f"ERROR REAL: {str(e)}"
-
 # --- HISTORIAL ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
