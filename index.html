@@ -5,19 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>JARVIS VORTEX</title>
     <style>
-        :root { --c: #00f2fe; --p: #4facfe; --bg: #050609; }
-        body { background: var(--bg); color: #fff; font-family: sans-serif; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-        .v { height: 70px; display: flex; justify-content: center; align-items: center; position: relative; flex-shrink: 0; }
-        .core { width: 30px; height: 30px; background: linear-gradient(135deg, var(--c), var(--p)); border-radius: 50%; box-shadow: 0 0 15px var(--c); z-index: 5; }
-        .pulse { position: absolute; width: 30px; height: 30px; border: 1.5px solid var(--c); border-radius: 50%; animation: p 2s infinite; }
+        :root { --c: #00f2fe; --bg: #050609; }
+        body { background: var(--bg); color: #fff; font-family: 'Segoe UI', sans-serif; margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        /* Núcleo Vortex */
+        .v { height: 70px; display: flex; justify-content: center; align-items: center; position: relative; }
+        .core { width: 30px; height: 30px; background: var(--c); border-radius: 50%; box-shadow: 0 0 15px var(--c); }
+        .pulse { position: absolute; width: 30px; height: 30px; border: 1px solid var(--c); border-radius: 50%; animation: p 2s infinite; }
         @keyframes p { 0% { scale: 1; opacity: 0.8; } 100% { scale: 4; opacity: 0; } }
+
+        /* Chat */
         #chat { flex-grow: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
         .msg { padding: 10px 15px; border-radius: 12px; font-size: 0.9rem; max-width: 85%; }
         .jarvis { background: rgba(0,242,254,0.05); border-left: 2px solid var(--c); align-self: flex-start; }
         .user { background: rgba(255,255,255,0.07); align-self: flex-end; }
-        .input-box { padding: 15px; background: #0a0b10; display: flex; gap: 8px; border-top: 1px solid rgba(0,242,254,0.1); }
+
+        /* Input y Botón */
+        .input-box { padding: 10px; background: #0a0b10; display: flex; gap: 8px; border-top: 1px solid rgba(0,242,254,0.1); }
         input { flex-grow: 1; background: rgba(255,255,255,0.03); border: 1px solid var(--c); border-radius: 20px; padding: 12px; color: #fff; outline: none; }
-        #btn { background: var(--c); border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; }
+        #btn { background: var(--c); border: none; border-radius: 50%; width: 45px; height: 45px; cursor: pointer; color: #000; font-size: 1.2rem; }
     </style>
 </head>
 <body>
@@ -34,16 +40,14 @@
         const c = document.getElementById('chat');
 
         function enviar() {
-            const val = i.value.trim();
-            if (val !== "") {
-                // BLOQUEO VISUAL
+            const t = i.value.trim();
+            if (t !== "") {
                 b.innerHTML = "⌛";
                 i.disabled = true;
-                
-                // FORZAR RECARGA DEL PADRE (STREAMLIT)
-                const topUrl = new URL(window.top.location.href);
-                topUrl.searchParams.set('chat', val);
-                window.top.location.href = topUrl.toString();
+                // ESTA LÍNEA ES LA CLAVE: Envía el dato al 'padre' (Streamlit)
+                const url = new URL(window.top.location.href);
+                url.searchParams.set('chat', t);
+                window.top.location.href = url.toString();
             }
         }
 
@@ -53,13 +57,6 @@
         window.onload = () => { 
             c.scrollTop = c.scrollHeight; 
             i.focus();
-            // Limpiar la URL después de que Streamlit procese el mensaje
-            if(window.top.location.search.includes('chat=')) {
-                setTimeout(() => {
-                    const cleanUrl = window.top.location.protocol + "//" + window.top.location.host + window.top.location.pathname;
-                    window.top.history.replaceState({path: cleanUrl}, '', cleanUrl);
-                }, 1000);
-            }
         };
     </script>
 </body>
