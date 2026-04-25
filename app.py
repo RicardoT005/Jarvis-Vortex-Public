@@ -46,7 +46,7 @@ if "historial" not in st.session_state:
     st.session_state.historial = ""
 
 # Captura de datos desde la URL (el método más directo)
-params = st.query_params
+st.query_params = {}
 if "chat" in params:
     pregunta = params["chat"]
     if pregunta != st.session_state.get("last_chat", ""):
