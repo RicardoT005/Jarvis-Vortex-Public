@@ -2,21 +2,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 from groq import Groq
 import sqlite3
+import json
 
-# Configuración básica
-st.set_page_config(page_title="JARVIS OS", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="JARVIS OS", layout="wide")
 
-# Estilos para limpiar la pantalla de Streamlit
-st.markdown("""
-    <style>
-        #MainMenu, footer, header {visibility: hidden;}
-        .stApp {margin: 0; padding: 0; background-color: #050609; overflow: hidden;}
-        .block-container {padding: 0 !important;}
-        iframe {border: none; width: 100vw; height: 100vh;}
-    </style>
-""", unsafe_allow_html=True)
-
-# --- BASE DE DATOS (.DB) ---
+# --- BASE DE DATOS ---
 def buscar_memoria(texto):
     try:
         conn = sqlite3.connect('jarvis_memoria.db')
@@ -25,41 +15,133 @@ def buscar_memoria(texto):
         res = cursor.fetchone()
         conn.close()
         return res[0] if res else None
-    except: return None
+    except:
+        return None
 
-# --- MOTOR DE INTELIGENCIA ---
+# --- IA ---
 def llamar_a_groq(prompt):
     memoria = buscar_memoria(prompt)
-    if memoria: return f"{memoria} (Memoria Local)"
-    try:
-        client = Groq(api_key=st.secrets["GROQ_KEY_1"])
-        chat_completion = client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role": "system", "content": "Eres JARVIS, la IA de Ricardo. Elegante y eficiente."},
-                      {"role": "user", "content": prompt}]
-        )
-        return chat_completion.choices[0].message.content
-    except Exception as e: return f"Error: {e}"
+    if memoria:
+        return f"{memoria} (Memoria Local)"
 
-# --- GESTIÓN DE MENSAJES ---
-if "historial" not in st.session_state:
-    st.session_state.historial = ""
+    client = Groq(api_key=st.secrets["GROQ_KEY_1"])
+    chat_completion = client.chat.completions.create(
+        model="llama3-70b-8192",
+        messages=[
+            {"role": "system", "content": "Eres JARVIS, elegante, preciso y directo."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return chat_completion.choices[0].message.content
 
-# Captura de datos desde la URL (el método más directo)
-st.query_params = {}
-if "chat" in params:
-    pregunta = params["chat"]
-    if pregunta != st.session_state.get("last_chat", ""):
-        respuesta = llamar_a_groq(pregunta)
-        st.session_state.historial += f'<div class="msg user"><strong>RICARDO:</strong> {pregunta}</div>'
-        st.session_state.historial += f'<div class="msg jarvis"><strong>JARVIS:</strong> {respuesta}</div>'
-        st.session_state.last_chat = pregunta
-        st.query_params.clear() # Limpia la URL para evitar bucles
+# --- ESTADO ---
+if "chat" not in st.session_state:
+    st.session_state.chat = []
 
-# --- CARGA DE INTERFAZ ---
-try:
-    with open("index.html", "r", encoding="utf-8") as f:
-        html_code = f.read().replace("{{CHAT}}", st.session_state.historial)
-    components.html(html_code, height=1500)
-except Exception as e:
-    st.error(f"Error cargando HTML: {e}")
+# --- HTML COMPONENT ---
+component_value = components.html(f"""
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body {{
+    background:#050609;
+    color:white;
+    font-family:Segoe UI;
+    margin:0;
+}}
+#chat {{
+    height:85vh;
+    overflow-y:auto;
+    padding:15px;
+}}
+.msg {{
+    padding:10px;
+    margin:5px;
+    border-radius:10px;
+}}
+.user {{ background:#222; text-align:right; }}
+.jarvis {{ background:#0af2; }}
+input {{
+    width:80%;
+    padding:10px;
+}}
+button {{
+    padding:10px;
+}}
+</style>
+</head>
+
+<body>
+
+<div id="chat"></div>
+
+<div>
+<input id="input" placeholder="Escribe..." />
+<button onclick="send()">Enviar</button>
+</div>
+
+<script>
+const chatDiv = document.getElementById("chat");
+
+// Cargar historial desde Streamlit
+const historial = {json.dumps(st.session_state.chat)};
+historial.forEach(m => addMessage(m.role, m.content));
+
+function addMessage(role, text) {{
+    let div = document.createElement("div");
+    div.className = "msg " + role;
+    div.innerText = text;
+    chatDiv.appendChild(div);
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+}}
+
+function send() {{
+    let input = document.getElementById("input");
+    let text = input.value.trim();
+    if (!text) return;
+
+    addMessage("user", text);
+
+    // enviar a Streamlit
+    window.parent.postMessage({{
+        type: "chat",
+        text: text
+    }}, "*");
+
+    input.value = "";
+}}
+
+// recibir respuesta de Streamlit
+window.addEventListener("message", (event) => {{
+    if (event.data.type === "response") {{
+        addMessage("jarvis", event.data.text);
+    }}
+}});
+</script>
+
+</body>
+</html>
+""", height=800)
+
+# --- RECEPCIÓN DE MENSAJES ---
+if component_value:
+    data = component_value
+    if data["type"] == "chat":
+        user_msg = data["text"]
+
+        st.session_state.chat.append({"role": "user", "content": user_msg})
+
+        respuesta = llamar_a_groq(user_msg)
+
+        st.session_state.chat.append({"role": "jarvis", "content": respuesta})
+
+        # reenviar respuesta al frontend
+        components.html(f"""
+        <script>
+        window.parent.postMessage({{
+            type: "response",
+            text: {json.dumps(respuesta)}
+        }}, "*");
+        </script>
+        """, height=0)
