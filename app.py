@@ -1,6 +1,7 @@
 import streamlit as st
 from groq import Groq
 import sqlite3
+import os
 
 st.set_page_config(page_title="JARVIS OS", layout="wide")
 
@@ -25,7 +26,8 @@ body {
 # --- BASE DE DATOS ---
 def buscar_memoria(texto):
     try:
-        conn = sqlite3.connect('jarvis_memoria.db')
+        DB_PATH = os.path.join(os.getcwd(), "jarvis_memoria.db")
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("SELECT respuesta FROM memoria WHERE pregunta LIKE ?", (f'%{texto}%',))
         res = cursor.fetchone()
