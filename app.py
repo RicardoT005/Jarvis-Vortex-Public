@@ -59,7 +59,7 @@ def login_user(username, password):
     }
 
     params = {
-        "username": f"eq.{username}",
+        "username": f"ilike.{username}",
         "password": f"eq.{password}"
     }
 
