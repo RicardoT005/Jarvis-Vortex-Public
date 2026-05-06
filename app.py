@@ -1,6 +1,5 @@
 import streamlit as st
 import sqlite3
-import time
 from groq import Groq
 from supabase import create_client
 
@@ -19,48 +18,7 @@ GROQ_KEYS = [
     st.secrets["GROQ_KEY_3"]
 ]
 
-# ================= DIAGNÓSTICO =================
-
-st.title("🔧 Inicializando sistema...")
-
-status_ok = True
-
-# --- SUPABASE TEST ---
-try:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    test = supabase.table("usuarios").select("*").limit(1).execute()
-    st.success("🟢 Supabase conectado")
-except Exception as e:
-    st.error(f"🔴 Supabase ERROR: {e}")
-    status_ok = False
-
-# --- GROQ TEST ---
-groq_ok = False
-
-for key in GROQ_KEYS:
-    try:
-        client = Groq(api_key=key)
-        res = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": "ping"}]
-        )
-        st.success("🟢 Groq conectado")
-        groq_ok = True
-        break
-    except:
-        continue
-
-if not groq_ok:
-    st.error("🔴 Groq ERROR: ninguna API funciona")
-    status_ok = False
-
-# --- RESULTADO FINAL ---
-if not status_ok:
-    st.error("❌ Sistema no inicializado. Corrige errores arriba.")
-    st.stop()
-
-st.success("✅ Todo correcto. Iniciando JARVIS...")
-time.sleep(2)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ================= DB =================
 
@@ -71,9 +29,22 @@ def init_db():
     conn = conectar()
     c = conn.cursor()
 
-    c.execute("CREATE TABLE IF NOT EXISTS chat_log (id INTEGER PRIMARY KEY, usuario TEXT, rol TEXT, mensaje TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS memoria_media (id INTEGER PRIMARY KEY, contenido TEXT)")
-    c.execute("CREATE TABLE IF NOT EXISTS memoria_larga (clave TEXT PRIMARY KEY, valor TEXT)")
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS chat_log (
+        id INTEGER PRIMARY KEY,
+        usuario TEXT,
+        rol TEXT,
+        mensaje TEXT
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS memoria_media (
+        id INTEGER PRIMARY KEY,
+        usuario TEXT,
+        contenido TEXT
+    )
+    """)
 
     conn.commit()
     conn.close()
@@ -81,13 +52,16 @@ def init_db():
 # ================= LOGIN =================
 
 def login_user(username, password):
-    res = supabase.table("usuarios") \
-        .select("*") \
-        .eq("username", username) \
-        .eq("password", password) \
-        .execute()
+    try:
+        res = supabase.table("usuarios") \
+            .select("*") \
+            .eq("username", username) \
+            .eq("password", password) \
+            .execute()
 
-    return res.data[0] if res.data else None
+        return res.data[0] if res.data else None
+    except:
+        return None
 
 # ================= IA =================
 
@@ -106,10 +80,13 @@ def ia(prompt):
 
 # ================= MEMORIA =================
 
-def guardar_memoria(texto):
+def guardar_memoria(usuario, texto):
     conn = conectar()
     c = conn.cursor()
-    c.execute("INSERT INTO memoria_media (contenido) VALUES (?)", (texto,))
+    c.execute(
+        "INSERT INTO memoria_media (usuario, contenido) VALUES (?, ?)",
+        (usuario, texto)
+    )
     conn.commit()
     conn.close()
 
@@ -117,10 +94,18 @@ def obtener_contexto(usuario):
     conn = conectar()
     c = conn.cursor()
 
-    c.execute("SELECT contenido FROM memoria_media ORDER BY id DESC LIMIT 5")
+    c.execute("""
+    SELECT contenido FROM memoria_media 
+    WHERE usuario=? 
+    ORDER BY id DESC LIMIT 5
+    """, (usuario,))
     media = "\n".join([x[0] for x in c.fetchall()])
 
-    c.execute("SELECT rol, mensaje FROM chat_log WHERE usuario=? ORDER BY id DESC LIMIT 6", (usuario,))
+    c.execute("""
+    SELECT rol, mensaje FROM chat_log 
+    WHERE usuario=? 
+    ORDER BY id DESC LIMIT 6
+    """, (usuario,))
     filas = c.fetchall()
 
     conn.close()
@@ -144,6 +129,9 @@ CONTEXTO:
 {media}
 
 Eres JARVIS.
+Recuerdas lo importante.
+Ignoras ruido.
+Proteges información sensible según rol.
 """
 
     mensajes = [{"role": "system", "content": system}]
@@ -153,7 +141,7 @@ Eres JARVIS.
     res = ia(mensajes)
 
     if not res:
-        return "⚠️ Error IA"
+        return "⚠️ Error con IA"
 
     return res.choices[0].message.content
 
@@ -162,7 +150,10 @@ Eres JARVIS.
 def guardar_chat(usuario, rol, texto):
     conn = conectar()
     c = conn.cursor()
-    c.execute("INSERT INTO chat_log (usuario, rol, mensaje) VALUES (?, ?, ?)", (usuario, rol, texto))
+    c.execute(
+        "INSERT INTO chat_log (usuario, rol, mensaje) VALUES (?, ?, ?)",
+        (usuario, rol, texto)
+    )
     conn.commit()
     conn.close()
 
@@ -192,7 +183,7 @@ if not st.session_state.user:
 
     st.stop()
 
-# PANEL
+# PANEL PRINCIPAL
 
 user = st.session_state.user["username"]
 rol = st.session_state.user["rol"]
@@ -211,7 +202,7 @@ if prompt := st.chat_input("Habla con JARVIS..."):
 
     st.session_state.chat.append({"role": "user", "content": prompt})
     guardar_chat(user, "user", prompt)
-    guardar_memoria(prompt)
+    guardar_memoria(user, prompt)
 
     with st.chat_message("assistant"):
         respuesta = responder(prompt, user, rol)
@@ -219,4 +210,4 @@ if prompt := st.chat_input("Habla con JARVIS..."):
 
     st.session_state.chat.append({"role": "assistant", "content": respuesta})
     guardar_chat(user, "assistant", respuesta)
-    guardar_memoria(respuesta)
+    guardar_memoria(user, respuesta)
