@@ -47,7 +47,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ================= LOGIN (SUPABASE REST) =================
+# ================= LOGIN (ROBUSTO) =================
 
 def login_user(username, password):
     url = f"{SUPABASE_URL}/rest/v1/usuarios"
@@ -58,19 +58,27 @@ def login_user(username, password):
         "Content-Type": "application/json"
     }
 
-    params = {
-        "username": f"ilike.{username}",
-        "password": f"eq.{password}"
-    }
-
     try:
-        res = requests.get(url, headers=headers, params=params)
+        res = requests.get(url, headers=headers)
 
-        if res.status_code == 200 and res.json():
-            return res.json()[0]
+        if res.status_code != 200:
+            return None
 
-    except:
-        pass
+        usuarios = res.json()
+
+        # normalización
+        username = username.strip().lower()
+        password = password.strip()
+
+        for user in usuarios:
+            db_user = user["username"].strip().lower()
+            db_pass = user["password"].strip()
+
+            if db_user == username and db_pass == password:
+                return user
+
+    except Exception as e:
+        st.error(f"Error login: {e}")
 
     return None
 
@@ -140,9 +148,9 @@ CONTEXTO:
 {media}
 
 Eres JARVIS.
-Recuerdas información importante.
+Recuerdas lo importante.
 Ignoras ruido.
-Proteges datos si el usuario no es admin.
+Si no es admin, no reveles información sensible.
 """
 
     mensajes = [{"role": "system", "content": system}]
@@ -189,6 +197,7 @@ if not st.session_state.user:
 
         if user:
             st.session_state.user = user
+            st.success("Acceso concedido")
             st.rerun()
         else:
             st.error("Credenciales incorrectas")
@@ -212,12 +221,10 @@ for m in st.session_state.chat:
 
 if prompt := st.chat_input("Habla con JARVIS..."):
 
-    # usuario
     st.session_state.chat.append({"role": "user", "content": prompt})
     guardar_chat(user, "user", prompt)
     guardar_memoria(user, prompt)
 
-    # respuesta IA
     with st.chat_message("assistant"):
         respuesta = responder(prompt, user, rol)
         st.markdown(respuesta)
