@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
+import requests
 from groq import Groq
-from supabase import create_client
 
 st.set_page_config(page_title="JARVIS VORTEX", layout="wide")
 
@@ -17,8 +17,6 @@ GROQ_KEYS = [
     st.secrets["GROQ_KEY_2"],
     st.secrets["GROQ_KEY_3"]
 ]
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ================= DB =================
 
@@ -49,19 +47,32 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ================= LOGIN =================
+# ================= LOGIN (SUPABASE REST) =================
 
 def login_user(username, password):
-    try:
-        res = supabase.table("usuarios") \
-            .select("*") \
-            .eq("username", username) \
-            .eq("password", password) \
-            .execute()
+    url = f"{SUPABASE_URL}/rest/v1/usuarios"
 
-        return res.data[0] if res.data else None
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    params = {
+        "username": f"eq.{username}",
+        "password": f"eq.{password}"
+    }
+
+    try:
+        res = requests.get(url, headers=headers, params=params)
+
+        if res.status_code == 200 and res.json():
+            return res.json()[0]
+
     except:
-        return None
+        pass
+
+    return None
 
 # ================= IA =================
 
@@ -95,15 +106,15 @@ def obtener_contexto(usuario):
     c = conn.cursor()
 
     c.execute("""
-    SELECT contenido FROM memoria_media 
-    WHERE usuario=? 
+    SELECT contenido FROM memoria_media
+    WHERE usuario=?
     ORDER BY id DESC LIMIT 5
     """, (usuario,))
     media = "\n".join([x[0] for x in c.fetchall()])
 
     c.execute("""
-    SELECT rol, mensaje FROM chat_log 
-    WHERE usuario=? 
+    SELECT rol, mensaje FROM chat_log
+    WHERE usuario=?
     ORDER BY id DESC LIMIT 6
     """, (usuario,))
     filas = c.fetchall()
@@ -129,9 +140,9 @@ CONTEXTO:
 {media}
 
 Eres JARVIS.
-Recuerdas lo importante.
+Recuerdas información importante.
 Ignoras ruido.
-Proteges información sensible según rol.
+Proteges datos si el usuario no es admin.
 """
 
     mensajes = [{"role": "system", "content": system}]
@@ -164,7 +175,8 @@ init_db()
 if "user" not in st.session_state:
     st.session_state.user = None
 
-# LOGIN
+# ================= LOGIN UI =================
+
 if not st.session_state.user:
 
     st.title("🔐 Login JARVIS")
@@ -183,7 +195,7 @@ if not st.session_state.user:
 
     st.stop()
 
-# PANEL PRINCIPAL
+# ================= PANEL =================
 
 user = st.session_state.user["username"]
 rol = st.session_state.user["rol"]
@@ -200,10 +212,12 @@ for m in st.session_state.chat:
 
 if prompt := st.chat_input("Habla con JARVIS..."):
 
+    # usuario
     st.session_state.chat.append({"role": "user", "content": prompt})
     guardar_chat(user, "user", prompt)
     guardar_memoria(user, prompt)
 
+    # respuesta IA
     with st.chat_message("assistant"):
         respuesta = responder(prompt, user, rol)
         st.markdown(respuesta)
