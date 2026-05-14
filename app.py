@@ -1,6 +1,5 @@
 import streamlit as st
 import sqlite3
-import requests
 from groq import Groq
 
 st.set_page_config(page_title="JARVIS VORTEX", layout="wide")
@@ -9,14 +8,25 @@ st.set_page_config(page_title="JARVIS VORTEX", layout="wide")
 
 DB = "jarvis_memoria.db"
 
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-
 GROQ_KEYS = [
     st.secrets["GROQ_KEY_1"],
     st.secrets["GROQ_KEY_2"],
     st.secrets["GROQ_KEY_3"]
 ]
+
+# ================= USUARIOS LOCALES =================
+
+USUARIOS = {
+    "ricardo": {
+        "password": "1234",
+        "rol": "admin"
+    },
+
+    "tester": {
+        "password": "1234",
+        "rol": "user"
+    }
+}
 
 # ================= DB =================
 
@@ -47,69 +57,65 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ================= LOGIN (ROBUSTO) =================
+# ================= LOGIN LOCAL =================
 
 def login_user(username, password):
-    url = f"{SUPABASE_URL}/rest/v1/usuarios"
 
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
-    }
+    username = username.strip().lower()
+    password = password.strip()
 
-    try:
-        res = requests.get(url, headers=headers)
+    if username in USUARIOS:
 
-        if res.status_code != 200:
-            return None
+        user_data = USUARIOS[username]
 
-        usuarios = res.json()
+        if user_data["password"] == password:
 
-        # normalización
-        username = username.strip().lower()
-        password = password.strip()
-
-        for user in usuarios:
-            db_user = user["username"].strip().lower()
-            db_pass = user["password"].strip()
-
-            if db_user == username and db_pass == password:
-                return user
-
-    except Exception as e:
-        st.error(f"Error login: {e}")
+            return {
+                "username": username,
+                "rol": user_data["rol"]
+            }
 
     return None
 
 # ================= IA =================
 
 def ia(prompt):
+
     for key in GROQ_KEYS:
+
         try:
+
             client = Groq(api_key=key)
+
             res = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=prompt
             )
+
             return res
+
         except:
             continue
+
     return None
 
 # ================= MEMORIA =================
 
 def guardar_memoria(usuario, texto):
+
     conn = conectar()
     c = conn.cursor()
+
     c.execute(
         "INSERT INTO memoria_media (usuario, contenido) VALUES (?, ?)",
         (usuario, texto)
     )
+
     conn.commit()
     conn.close()
 
 def obtener_contexto(usuario):
+
     conn = conectar()
     c = conn.cursor()
 
@@ -118,6 +124,7 @@ def obtener_contexto(usuario):
     WHERE usuario=?
     ORDER BY id DESC LIMIT 5
     """, (usuario,))
+
     media = "\n".join([x[0] for x in c.fetchall()])
 
     c.execute("""
@@ -125,19 +132,26 @@ def obtener_contexto(usuario):
     WHERE usuario=?
     ORDER BY id DESC LIMIT 6
     """, (usuario,))
+
     filas = c.fetchall()
 
     conn.close()
 
     historial = []
+
     for rol, msg in reversed(filas):
-        historial.append({"role": rol, "content": msg})
+
+        historial.append({
+            "role": rol,
+            "content": msg
+        })
 
     return media, historial
 
 # ================= RESPUESTA =================
 
 def responder(prompt, usuario, rol):
+
     media, historial = obtener_contexto(usuario)
 
     system = f"""
@@ -148,14 +162,23 @@ CONTEXTO:
 {media}
 
 Eres JARVIS.
+
 Recuerdas lo importante.
 Ignoras ruido.
-Si no es admin, no reveles información sensible.
+No reveles información sensible a usuarios no admin.
 """
 
-    mensajes = [{"role": "system", "content": system}]
+    mensajes = [{
+        "role": "system",
+        "content": system
+    }]
+
     mensajes.extend(historial)
-    mensajes.append({"role": "user", "content": prompt})
+
+    mensajes.append({
+        "role": "user",
+        "content": prompt
+    })
 
     res = ia(mensajes)
 
@@ -167,12 +190,15 @@ Si no es admin, no reveles información sensible.
 # ================= CHAT =================
 
 def guardar_chat(usuario, rol, texto):
+
     conn = conectar()
     c = conn.cursor()
+
     c.execute(
         "INSERT INTO chat_log (usuario, rol, mensaje) VALUES (?, ?, ?)",
         (usuario, rol, texto)
     )
+
     conn.commit()
     conn.close()
 
@@ -182,6 +208,9 @@ init_db()
 
 if "user" not in st.session_state:
     st.session_state.user = None
+
+if "chat" not in st.session_state:
+    st.session_state.chat = []
 
 # ================= LOGIN UI =================
 
@@ -193,13 +222,19 @@ if not st.session_state.user:
     password = st.text_input("Contraseña", type="password")
 
     if st.button("Entrar"):
+
         user = login_user(username, password)
 
         if user:
+
             st.session_state.user = user
+
             st.success("Acceso concedido")
+
             st.rerun()
+
         else:
+
             st.error("Credenciales incorrectas")
 
     st.stop()
@@ -212,23 +247,40 @@ rol = st.session_state.user["rol"]
 st.title("🔘 JARVIS VORTEX")
 st.write(f"👤 {user} | 🛡 {rol}")
 
-if "chat" not in st.session_state:
-    st.session_state.chat = []
+# ================= CHAT =================
 
 for m in st.session_state.chat:
+
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
+# ================= INPUT =================
+
 if prompt := st.chat_input("Habla con JARVIS..."):
 
-    st.session_state.chat.append({"role": "user", "content": prompt})
+    st.session_state.chat.append({
+        "role": "user",
+        "content": prompt
+    })
+
     guardar_chat(user, "user", prompt)
+
     guardar_memoria(user, prompt)
 
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
     with st.chat_message("assistant"):
+
         respuesta = responder(prompt, user, rol)
+
         st.markdown(respuesta)
 
-    st.session_state.chat.append({"role": "assistant", "content": respuesta})
+    st.session_state.chat.append({
+        "role": "assistant",
+        "content": respuesta
+    })
+
     guardar_chat(user, "assistant", respuesta)
+
     guardar_memoria(user, respuesta)
