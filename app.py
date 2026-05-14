@@ -14,24 +14,27 @@ GROQ_KEYS = [
     st.secrets["GROQ_KEY_3"]
 ]
 
-# ================= USUARIOS LOCALES =================
+# ================= LOGIN LOCAL =================
 
 USUARIOS = {
     "ricardo": {
         "password": "1234",
         "rol": "admin"
     },
-
-    "tester": {
+    "colaborador": {
         "password": "1234",
-        "rol": "user"
+        "rol": "colaborador"
+    },
+    "usuario": {
+        "password": "1234",
+        "rol": "usuario"
     }
 }
 
 # ================= DB =================
 
 def conectar():
-    return sqlite3.connect(DB)
+    return sqlite3.connect(DB, check_same_thread=False)
 
 def init_db():
 
@@ -42,7 +45,7 @@ def init_db():
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS chat_log (
-        id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario TEXT DEFAULT 'ricardo',
         rol TEXT,
         mensaje TEXT
@@ -64,7 +67,7 @@ def init_db():
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS memoria_media (
-        id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         usuario TEXT DEFAULT 'ricardo',
         contenido TEXT
     )
@@ -81,25 +84,6 @@ def init_db():
 
     conn.commit()
     conn.close()
-# ================= LOGIN LOCAL =================
-
-def login_user(username, password):
-
-    username = username.strip().lower()
-    password = password.strip()
-
-    if username in USUARIOS:
-
-        user_data = USUARIOS[username]
-
-        if user_data["password"] == password:
-
-            return {
-                "username": username,
-                "rol": user_data["rol"]
-            }
-
-    return None
 
 # ================= IA =================
 
@@ -108,17 +92,16 @@ def ia(prompt):
     for key in GROQ_KEYS:
 
         try:
-
             client = Groq(api_key=key)
 
-            res = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+            respuesta = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
                 messages=prompt
             )
 
-            return res
+            return respuesta
 
-        except:
+        except Exception as e:
             continue
 
     return None
@@ -143,6 +126,7 @@ def obtener_contexto(usuario):
     conn = conectar()
     c = conn.cursor()
 
+    # memoria media
     c.execute("""
     SELECT contenido FROM memoria_media
     WHERE usuario=?
@@ -151,6 +135,7 @@ def obtener_contexto(usuario):
 
     media = "\n".join([x[0] for x in c.fetchall()])
 
+    # historial
     c.execute("""
     SELECT rol, mensaje FROM chat_log
     WHERE usuario=?
@@ -165,8 +150,10 @@ def obtener_contexto(usuario):
 
     for rol, msg in reversed(filas):
 
+        r = "assistant" if rol == "assistant" else "user"
+
         historial.append({
-            "role": rol,
+            "role": r,
             "content": msg
         })
 
@@ -179,17 +166,25 @@ def responder(prompt, usuario, rol):
     media, historial = obtener_contexto(usuario)
 
     system = f"""
-USUARIO: {usuario}
-ROL: {rol}
+Eres JARVIS VORTEX.
 
-CONTEXTO:
+USUARIO ACTUAL:
+{usuario}
+
+ROL:
+{rol}
+
+CONTEXTO RECIENTE:
 {media}
 
-Eres JARVIS.
+REGLAS:
 
-Recuerdas lo importante.
-Ignoras ruido.
-No reveles información sensible a usuarios no admin.
+- Recuerdas datos importantes.
+- Ignoras ruido innecesario.
+- Mantienes contexto.
+- Si el usuario NO es admin:
+  NO reveles información sensible.
+- Si es admin puedes hablar libremente.
 """
 
     mensajes = [{
@@ -226,9 +221,11 @@ def guardar_chat(usuario, rol, texto):
     conn.commit()
     conn.close()
 
-# ================= UI =================
+# ================= INICIAR DB =================
 
 init_db()
+
+# ================= SESSION =================
 
 if "user" not in st.session_state:
     st.session_state.user = None
@@ -236,42 +233,46 @@ if "user" not in st.session_state:
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
-# ================= LOGIN UI =================
+# ================= LOGIN =================
 
 if not st.session_state.user:
 
-    st.title("🔐 Login JARVIS")
+    st.title("🔐 LOGIN JARVIS")
 
     username = st.text_input("Usuario")
     password = st.text_input("Contraseña", type="password")
 
     if st.button("Entrar"):
 
-        user = login_user(username, password)
+        username = username.strip().lower()
 
-        if user:
+        if username in USUARIOS:
 
-            st.session_state.user = user
+            if password == USUARIOS[username]["password"]:
 
-            st.success("Acceso concedido")
+                st.session_state.user = {
+                    "username": username,
+                    "rol": USUARIOS[username]["rol"]
+                }
 
-            st.rerun()
+                st.success("Acceso concedido")
+                st.rerun()
 
-        else:
-
-            st.error("Credenciales incorrectas")
+        st.error("Credenciales incorrectas")
 
     st.stop()
 
-# ================= PANEL =================
+# ================= DATOS USER =================
 
 user = st.session_state.user["username"]
 rol = st.session_state.user["rol"]
 
+# ================= UI =================
+
 st.title("🔘 JARVIS VORTEX")
 st.write(f"👤 {user} | 🛡 {rol}")
 
-# ================= CHAT =================
+# ================= MOSTRAR CHAT =================
 
 for m in st.session_state.chat:
 
@@ -282,29 +283,27 @@ for m in st.session_state.chat:
 
 if prompt := st.chat_input("Habla con JARVIS..."):
 
+    # guardar user msg
     st.session_state.chat.append({
         "role": "user",
         "content": prompt
     })
 
     guardar_chat(user, "user", prompt)
-
     guardar_memoria(user, prompt)
 
-    with st.chat_message("user"):
-        st.markdown(prompt)
-
+    # respuesta IA
     with st.chat_message("assistant"):
 
         respuesta = responder(prompt, user, rol)
 
         st.markdown(respuesta)
 
+    # guardar respuesta
     st.session_state.chat.append({
         "role": "assistant",
         "content": respuesta
     })
 
     guardar_chat(user, "assistant", respuesta)
-
     guardar_memoria(user, respuesta)
