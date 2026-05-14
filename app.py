@@ -34,29 +34,53 @@ def conectar():
     return sqlite3.connect(DB)
 
 def init_db():
+
     conn = conectar()
     c = conn.cursor()
+
+    # ================= CHAT LOG =================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS chat_log (
         id INTEGER PRIMARY KEY,
-        usuario TEXT,
+        usuario TEXT DEFAULT 'ricardo',
         rol TEXT,
         mensaje TEXT
     )
     """)
 
+    # verificar columnas existentes
+    c.execute("PRAGMA table_info(chat_log)")
+    columnas = [col[1] for col in c.fetchall()]
+
+    # agregar usuario si falta
+    if "usuario" not in columnas:
+        c.execute("""
+        ALTER TABLE chat_log
+        ADD COLUMN usuario TEXT DEFAULT 'ricardo'
+        """)
+
+    # ================= MEMORIA MEDIA =================
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS memoria_media (
         id INTEGER PRIMARY KEY,
-        usuario TEXT,
+        usuario TEXT DEFAULT 'ricardo',
         contenido TEXT
     )
     """)
 
+    c.execute("PRAGMA table_info(memoria_media)")
+    columnas_mem = [col[1] for col in c.fetchall()]
+
+    if "usuario" not in columnas_mem:
+        c.execute("""
+        ALTER TABLE memoria_media
+        ADD COLUMN usuario TEXT DEFAULT 'ricardo'
+        """)
+
     conn.commit()
     conn.close()
-
 # ================= LOGIN LOCAL =================
 
 def login_user(username, password):
