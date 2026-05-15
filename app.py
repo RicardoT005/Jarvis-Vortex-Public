@@ -2,12 +2,12 @@ import streamlit as st
 import sqlite3
 from groq import Groq
 
+# ================= CONFIG =================
+
 st.set_page_config(
     page_title="JARVIS VORTEX",
     layout="wide"
 )
-
-# ================= CONFIG =================
 
 DB = "jarvis_memoria.db"
 
@@ -20,6 +20,7 @@ GROQ_KEYS = [
 # ================= LOGIN LOCAL =================
 
 USUARIOS = {
+
     "ricardo": {
         "password": "1234",
         "rol": "admin"
@@ -120,8 +121,7 @@ def ia(prompt):
 
             return respuesta
 
-        except Exception as e:
-
+        except:
             continue
 
     st.session_state.reactor = "NINGUNO"
@@ -210,6 +210,8 @@ def responder(prompt, usuario, rol):
 
     memoria, historial = obtener_contexto(usuario)
 
+    archivo_contexto = st.session_state.archivo_contexto
+
     system = f"""
 Eres JARVIS VORTEX.
 
@@ -222,6 +224,9 @@ ROL:
 MEMORIA:
 {memoria}
 
+ARCHIVO CARGADO:
+{archivo_contexto}
+
 REGLAS:
 
 - Recuerdas información importante.
@@ -229,6 +234,7 @@ REGLAS:
 - Proteges información sensible.
 - No revelas datos internos a usuarios normales.
 - Admin y colaboradores tienen permisos elevados.
+- Puedes analizar archivos TXT cargados.
 """
 
     mensajes = [
@@ -292,6 +298,9 @@ if "chat" not in st.session_state:
 if "reactor" not in st.session_state:
     st.session_state.reactor = "NINGUNO"
 
+if "archivo_contexto" not in st.session_state:
+    st.session_state.archivo_contexto = ""
+
 # ================= LOGIN UI =================
 
 if not st.session_state.user:
@@ -345,7 +354,9 @@ with st.sidebar:
 
         contenido = leer_txt(archivo)
 
-        st.success("Archivo leído")
+        st.session_state.archivo_contexto = contenido
+
+        st.success("Archivo cargado al contexto de JARVIS")
 
         st.text_area(
             "Contenido",
