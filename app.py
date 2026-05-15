@@ -1,5 +1,6 @@
 import streamlit as st
 import sqlite3
+import os
 from groq import Groq
 
 st.set_page_config(page_title="JARVIS VORTEX", layout="wide")
@@ -52,11 +53,9 @@ def init_db():
     )
     """)
 
-    # verificar columnas existentes
     c.execute("PRAGMA table_info(chat_log)")
     columnas = [col[1] for col in c.fetchall()]
 
-    # agregar usuario si falta
     if "usuario" not in columnas:
         c.execute("""
         ALTER TABLE chat_log
@@ -92,6 +91,7 @@ def ia(prompt):
     for key in GROQ_KEYS:
 
         try:
+
             client = Groq(api_key=key)
 
             respuesta = client.chat.completions.create(
@@ -101,7 +101,7 @@ def ia(prompt):
 
             return respuesta
 
-        except Exception as e:
+        except:
             continue
 
     return None
@@ -159,6 +159,42 @@ def obtener_contexto(usuario):
 
     return media, historial
 
+# ================= LEER ARCHIVOS =================
+
+def leer_archivo(archivo):
+
+    try:
+
+        nombre = archivo.name.lower()
+
+        extensiones_validas = [
+            ".txt",
+            ".md",
+            ".py",
+            ".json",
+            ".html",
+            ".css",
+            ".js"
+        ]
+
+        valido = False
+
+        for ext in extensiones_validas:
+
+            if nombre.endswith(ext):
+                valido = True
+                break
+
+        if not valido:
+            return None
+
+        contenido = archivo.read().decode("utf-8")
+
+        return contenido
+
+    except Exception as e:
+        return f"Error leyendo archivo: {e}"
+
 # ================= RESPUESTA =================
 
 def responder(prompt, usuario, rol):
@@ -184,7 +220,7 @@ REGLAS:
 - Mantienes contexto.
 - Si el usuario NO es admin:
   NO reveles información sensible.
-- Si es admin puedes hablar libremente.
+- Puedes analizar archivos de texto.
 """
 
     mensajes = [{
@@ -272,6 +308,27 @@ rol = st.session_state.user["rol"]
 st.title("🔘 JARVIS VORTEX")
 st.write(f"👤 {user} | 🛡 {rol}")
 
+# ================= SUBIR ARCHIVOS =================
+
+archivo = st.file_uploader(
+    "📂 Subir archivo de texto",
+    type=["txt", "md", "py", "json", "html", "css", "js"]
+)
+
+contenido_archivo = ""
+
+if archivo:
+
+    contenido_archivo = leer_archivo(archivo)
+
+    if contenido_archivo:
+
+        st.success("Archivo cargado correctamente")
+
+        with st.expander("Ver contenido"):
+
+            st.text(contenido_archivo[:5000])
+
 # ================= MOSTRAR CHAT =================
 
 for m in st.session_state.chat:
@@ -283,7 +340,17 @@ for m in st.session_state.chat:
 
 if prompt := st.chat_input("Habla con JARVIS..."):
 
-    # guardar user msg
+    prompt_final = prompt
+
+    if contenido_archivo:
+
+        prompt_final += f"""
+
+ARCHIVO CARGADO:
+{contenido_archivo}
+"""
+
+    # guardar mensaje usuario
     st.session_state.chat.append({
         "role": "user",
         "content": prompt
@@ -295,7 +362,7 @@ if prompt := st.chat_input("Habla con JARVIS..."):
     # respuesta IA
     with st.chat_message("assistant"):
 
-        respuesta = responder(prompt, user, rol)
+        respuesta = responder(prompt_final, user, rol)
 
         st.markdown(respuesta)
 
