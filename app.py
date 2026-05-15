@@ -256,15 +256,26 @@ REGLAS:
 
 def leer_txt(archivo):
 
-    try:
+    codificaciones = [
+        "utf-8",
+        "latin-1",
+        "cp1252"
+    ]
 
-        contenido = archivo.read().decode("utf-8")
+    datos = archivo.read()
 
-        return contenido
+    for cod in codificaciones:
 
-    except:
+        try:
 
-        return "⚠ No se pudo leer el archivo"
+            contenido = datos.decode(cod)
+
+            return contenido
+
+        except:
+            pass
+
+    return "⚠ No se pudo leer el archivo"
 
 # ================= INICIO =================
 
