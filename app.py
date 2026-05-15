@@ -35,7 +35,7 @@ USUARIOS = {
     "user1": {
         "password": "1234",
         "rol": "usuario"
-    }
+    },
 
     "iker": {
         "password": "1234",
