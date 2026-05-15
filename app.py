@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 from groq import Groq
+from pypdf import PdfReader
 
 # ================= CONFIG =================
 
@@ -234,7 +235,7 @@ REGLAS:
 - Proteges información sensible.
 - No revelas datos internos a usuarios normales.
 - Admin y colaboradores tienen permisos elevados.
-- Puedes analizar archivos TXT cargados.
+- Puedes analizar archivos TXT y PDF.
 """
 
     mensajes = [
@@ -258,30 +259,64 @@ REGLAS:
 
     return res.choices[0].message.content
 
-# ================= LEER TXT =================
+# ================= LEER ARCHIVOS =================
 
-def leer_txt(archivo):
+def leer_archivo(archivo):
 
-    codificaciones = [
-        "utf-8",
-        "latin-1",
-        "cp1252"
-    ]
+    nombre = archivo.name.lower()
 
-    datos = archivo.read()
+    # ================= TXT =================
 
-    for cod in codificaciones:
+    if nombre.endswith(".txt"):
+
+        codificaciones = [
+            "utf-8",
+            "latin-1",
+            "cp1252"
+        ]
+
+        datos = archivo.read()
+
+        for cod in codificaciones:
+
+            try:
+
+                contenido = datos.decode(cod)
+
+                return contenido
+
+            except:
+                pass
+
+        return "⚠ No se pudo leer el TXT"
+
+    # ================= PDF =================
+
+    elif nombre.endswith(".pdf"):
 
         try:
 
-            contenido = datos.decode(cod)
+            pdf = PdfReader(archivo)
 
-            return contenido
+            texto = ""
 
-        except:
-            pass
+            for pagina in pdf.pages:
 
-    return "⚠ No se pudo leer el archivo"
+                contenido = pagina.extract_text()
+
+                if contenido:
+                    texto += contenido + "\n"
+
+            if texto.strip() == "":
+                return "⚠ El PDF no contiene texto seleccionable"
+
+            return texto
+
+        except Exception as e:
+
+            return f"⚠ Error leyendo PDF: {e}"
+
+    return "⚠ Formato no compatible"
 
 # ================= INICIO =================
 
@@ -346,13 +381,13 @@ with st.sidebar:
     st.markdown("## 📂 ARCHIVOS")
 
     archivo = st.file_uploader(
-        "Subir TXT",
-        type=["txt"]
+        "Subir archivo",
+        type=["txt", "pdf"]
     )
 
     if archivo:
 
-        contenido = leer_txt(archivo)
+        contenido = leer_archivo(archivo)
 
         st.session_state.archivo_contexto = contenido
 
