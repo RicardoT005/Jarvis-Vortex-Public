@@ -2,6 +2,9 @@ import streamlit as st
 import sqlite3
 from groq import Groq
 from pypdf import PdfReader
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import quote
 
 # ================= CONFIG =================
 
@@ -35,11 +38,6 @@ USUARIOS = {
     "user1": {
         "password": "1234",
         "rol": "usuario"
-    },
-
-    "iker": {
-        "password": "1234",
-        "rol": "usuario"
     }
 }
 
@@ -53,8 +51,6 @@ def init_db():
     conn = conectar()
     c = conn.cursor()
 
-    # ================= CHAT =================
-
     c.execute("""
     CREATE TABLE IF NOT EXISTS chat_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,8 +60,6 @@ def init_db():
     )
     """)
 
-    # ================= MEMORIA =================
-
     c.execute("""
     CREATE TABLE IF NOT EXISTS memoria_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,20 +67,6 @@ def init_db():
         contenido TEXT
     )
     """)
-
-    conn.commit()
-
-    # ================= MIGRACIONES =================
-
-    try:
-        c.execute("ALTER TABLE chat_log ADD COLUMN usuario TEXT")
-    except:
-        pass
-
-    try:
-        c.execute("ALTER TABLE memoria_media ADD COLUMN usuario TEXT")
-    except:
-        pass
 
     conn.commit()
     conn.close()
@@ -173,8 +153,6 @@ def obtener_contexto(usuario):
     conn = conectar()
     c = conn.cursor()
 
-    # ===== MEMORIA =====
-
     c.execute("""
     SELECT contenido
     FROM memoria_media
@@ -184,8 +162,6 @@ def obtener_contexto(usuario):
     """, (usuario,))
 
     memoria = "\n".join([x[0] for x in c.fetchall()])
-
-    # ===== CHAT =====
 
     c.execute("""
     SELECT rol, mensaje
@@ -210,61 +186,7 @@ def obtener_contexto(usuario):
 
     return memoria, historial
 
-# ================= RESPONDER =================
-
-def responder(prompt, usuario, rol):
-
-    memoria, historial = obtener_contexto(usuario)
-
-    archivo_contexto = st.session_state.archivo_contexto
-
-    system = f"""
-Eres JARVIS VORTEX.
-
-USUARIO ACTUAL:
-{usuario}
-
-ROL:
-{rol}
-
-MEMORIA:
-{memoria}
-
-ARCHIVO CARGADO:
-{archivo_contexto}
-
-REGLAS:
-
-- Recuerdas información importante.
-- Ignoras ruido.
-- Proteges información sensible.
-- No revelas datos internos a usuarios normales.
-- Admin y colaboradores tienen permisos elevados.
-- Puedes analizar archivos TXT y PDF.
-"""
-
-    mensajes = [
-        {
-            "role": "system",
-            "content": system
-        }
-    ]
-
-    mensajes.extend(historial)
-
-    mensajes.append({
-        "role": "user",
-        "content": prompt
-    })
-
-    res = ia(mensajes)
-
-    if not res:
-        return "⚠ Error con IA"
-
-    return res.choices[0].message.content
-
-# ================= LEER ARCHIVOS =================
+# ================= LECTOR =================
 
 def leer_archivo(archivo):
 
@@ -285,15 +207,11 @@ def leer_archivo(archivo):
         for cod in codificaciones:
 
             try:
-
-                contenido = datos.decode(cod)
-
-                return contenido
-
+                return datos.decode(cod)
             except:
                 pass
 
-        return "⚠ No se pudo leer el TXT"
+        return "⚠ No se pudo leer TXT"
 
     # ================= PDF =================
 
@@ -312,16 +230,172 @@ def leer_archivo(archivo):
                 if contenido:
                     texto += contenido + "\n"
 
-            if texto.strip() == "":
-                return "⚠ El PDF no contiene texto seleccionable"
-
             return texto
 
         except Exception as e:
 
-            return f"⚠ Error leyendo PDF: {e}"
+            return f"⚠ Error PDF: {e}"
 
     return "⚠ Formato no compatible"
+
+# ================= PALABRAS CLAVE =================
+
+def extraer_keywords(texto):
+
+    ignorar = [
+        "el", "la", "los", "las",
+        "de", "del", "y", "o",
+        "que", "como", "para",
+        "por", "un", "una",
+        "es", "en", "al",
+        "se", "me", "mi"
+    ]
+
+    palabras = texto.lower().split()
+
+    keywords = []
+
+    for p in palabras:
+
+        p = p.strip(".,!?()[]{}:;\"'")
+
+        if len(p) > 3 and p not in ignorar:
+
+            keywords.append(p)
+
+    return list(set(keywords))
+
+# ================= BUSCADOR CONTEXTO =================
+
+def buscar_contexto_relevante(prompt):
+
+    texto = st.session_state.archivo_contexto
+
+    if not texto:
+        return ""
+
+    keywords = extraer_keywords(prompt)
+
+    fragmentos = texto.split("\n\n")
+
+    relevantes = []
+
+    for fragmento in fragmentos:
+
+        fragmento_lower = fragmento.lower()
+
+        coincidencias = 0
+
+        for palabra in keywords:
+
+            if palabra in fragmento_lower:
+                coincidencias += 1
+
+        if coincidencias > 0:
+
+            relevantes.append(fragmento)
+
+    return "\n\n".join(relevantes[:5])
+
+# ================= GOOGLE =================
+
+def buscar_google(query):
+
+    try:
+
+        query = quote(query)
+
+        url = f"https://www.google.com/search?q={query}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=10
+        )
+
+        soup = BeautifulSoup(
+            response.text,
+            "html.parser"
+        )
+
+        resultados = []
+
+        for g in soup.find_all(
+            "div",
+            class_="BNeawe vvjwJb AP7Wnd"
+        )[:5]:
+
+            resultados.append(g.get_text())
+
+        if len(resultados) == 0:
+            return "⚠ No se encontraron resultados"
+
+        return "\n".join(resultados)
+
+    except Exception as e:
+
+        return f"⚠ Error Google: {e}"
+
+# ================= RESPONDER =================
+
+def responder(prompt, usuario, rol):
+
+    memoria, historial = obtener_contexto(usuario)
+
+    contexto_relevante = buscar_contexto_relevante(prompt)
+
+    web_contexto = st.session_state.web_contexto
+
+    system = f"""
+Eres JARVIS VORTEX.
+
+USUARIO:
+{usuario}
+
+ROL:
+{rol}
+
+MEMORIA:
+{memoria}
+
+CONTEXTO RELEVANTE:
+{contexto_relevante}
+
+CONTEXTO WEB:
+{web_contexto}
+
+REGLAS:
+
+- Usas SOLO contexto relevante.
+- Ignoras ruido.
+- Proteges información sensible.
+- No revelas datos internos a usuarios normales.
+- Admin y colaboradores tienen permisos elevados.
+- Puedes analizar TXT y PDF.
+"""
+
+    mensajes = [{
+        "role": "system",
+        "content": system
+    }]
+
+    mensajes.extend(historial)
+
+    mensajes.append({
+        "role": "user",
+        "content": prompt
+    })
+
+    res = ia(mensajes)
+
+    if not res:
+        return "⚠ Error IA"
+
+    return res.choices[0].message.content
 
 # ================= INICIO =================
 
@@ -341,14 +415,21 @@ if "reactor" not in st.session_state:
 if "archivo_contexto" not in st.session_state:
     st.session_state.archivo_contexto = ""
 
-# ================= LOGIN UI =================
+if "web_contexto" not in st.session_state:
+    st.session_state.web_contexto = ""
+
+# ================= LOGIN =================
 
 if not st.session_state.user:
 
     st.title("🔐 LOGIN JARVIS")
 
     username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
+
+    password = st.text_input(
+        "Contraseña",
+        type="password"
+    )
 
     if st.button("Entrar"):
 
@@ -368,9 +449,10 @@ if not st.session_state.user:
 
     st.stop()
 
-# ================= DATOS USER =================
+# ================= USER =================
 
 user = st.session_state.user["username"]
+
 rol = st.session_state.user["rol"]
 
 # ================= SIDEBAR =================
@@ -379,9 +461,13 @@ with st.sidebar:
 
     st.markdown("## ⚡ REACTORES")
 
-    st.write(f"🧠 Reactor activo: {st.session_state.reactor}")
+    st.write(
+        f"🧠 Reactor activo: {st.session_state.reactor}"
+    )
 
     st.divider()
+
+    # ================= ARCHIVOS =================
 
     st.markdown("## 📂 ARCHIVOS")
 
@@ -396,20 +482,49 @@ with st.sidebar:
 
         st.session_state.archivo_contexto = contenido
 
-        st.success("Archivo cargado al contexto de JARVIS")
+        st.success(
+            "Archivo cargado al contexto"
+        )
 
         st.text_area(
             "Contenido",
-            contenido,
+            contenido[:5000],
             height=300
         )
 
     st.divider()
 
+    # ================= INTERNET =================
+
+    st.markdown("## 🌐 INTERNET")
+
+    busqueda = st.text_input(
+        "Buscar en Google"
+    )
+
+    if st.button("Buscar"):
+
+        with st.spinner("Buscando..."):
+
+            resultados = buscar_google(busqueda)
+
+            st.session_state.web_contexto = resultados
+
+            st.success("Resultados cargados")
+
+            st.text_area(
+                "Resultados",
+                resultados,
+                height=250
+            )
+
+    st.divider()
+
     st.write(f"👤 Usuario: {user}")
+
     st.write(f"🛡 Rol: {rol}")
 
-# ================= PANEL =================
+# ================= CHAT =================
 
 st.title("⚙ JARVIS VORTEX")
 
@@ -419,11 +534,9 @@ for m in st.session_state.chat:
 
         st.markdown(m["content"])
 
-# ================= CHAT =================
+# ================= INPUT =================
 
 if prompt := st.chat_input("Habla con JARVIS..."):
-
-    # ===== USER =====
 
     st.session_state.chat.append({
         "role": "user",
@@ -434,21 +547,28 @@ if prompt := st.chat_input("Habla con JARVIS..."):
 
     guardar_memoria(user, prompt)
 
-    # ===== IA =====
-
     with st.chat_message("assistant"):
 
-        respuesta = responder(prompt, user, rol)
+        respuesta = responder(
+            prompt,
+            user,
+            rol
+        )
 
         st.markdown(respuesta)
-
-    # ===== SAVE =====
 
     st.session_state.chat.append({
         "role": "assistant",
         "content": respuesta
     })
 
-    guardar_chat(user, "assistant", respuesta)
+    guardar_chat(
+        user,
+        "assistant",
+        respuesta
+    )
 
-    guardar_memoria(user, respuesta)
+    guardar_memoria(
+        user,
+        respuesta
+    )
