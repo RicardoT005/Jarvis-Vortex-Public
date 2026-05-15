@@ -1,40 +1,42 @@
 import streamlit as st
 import sqlite3
 from groq import Groq
-
-st.set_page_config(page_title="JARVIS VORTEX", layout="wide")
+import os
 
 # =========================================================
 # CONFIG
 # =========================================================
 
+st.set_page_config(
+    page_title="JARVIS VORTEX",
+    layout="wide"
+)
+
 DB = "jarvis_memoria.db"
 
-GROQ_KEYS = {
-    "REACTOR_1": st.secrets["GROQ_KEY_1"],
-    "REACTOR_2": st.secrets["GROQ_KEY_2"],
-    "REACTOR_3": st.secrets["GROQ_KEY_3"]
-}
-
-LIMITE_TOKENS = 6000
+GROQ_KEYS = [
+    os.getenv("GROQ_KEY_1", st.secrets["GROQ_KEY_1"]),
+    os.getenv("GROQ_KEY_2", st.secrets["GROQ_KEY_2"]),
+    os.getenv("GROQ_KEY_3", st.secrets["GROQ_KEY_3"])
+]
 
 # =========================================================
-# LOGIN LOCAL
+# LOGIN LOCAL TEMPORAL
 # =========================================================
 
 USUARIOS = {
     "ricardo": {
-        "password": "1234",
+        "password": "admin123",
         "rol": "admin"
     },
 
-    "colaborador": {
-        "password": "1234",
+    "colab1": {
+        "password": "colab123",
         "rol": "colaborador"
     },
 
-    "usuario": {
-        "password": "1234",
+    "user1": {
+        "password": "user123",
         "rol": "usuario"
     }
 }
@@ -52,104 +54,111 @@ def init_db():
     c = conn.cursor()
 
     # =====================================================
-    # CHAT LOG
+    # CHAT
     # =====================================================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS chat_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT DEFAULT 'ricardo',
+        usuario TEXT,
         rol TEXT,
         mensaje TEXT
     )
     """)
 
-    # detectar columnas existentes
-    c.execute("PRAGMA table_info(chat_log)")
-    columnas = [col[1] for col in c.fetchall()]
-
-    # agregar columna usuario si no existe
-    if "usuario" not in columnas:
-
-        c.execute("""
-        ALTER TABLE chat_log
-        ADD COLUMN usuario TEXT DEFAULT 'ricardo'
-        """)
-
     # =====================================================
-    # MEMORIA MEDIA
+    # MEMORIA
     # =====================================================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS memoria_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT DEFAULT 'ricardo',
+        usuario TEXT,
         contenido TEXT
     )
     """)
 
-    c.execute("PRAGMA table_info(memoria_media)")
-    columnas_mem = [col[1] for col in c.fetchall()]
-
-    if "usuario" not in columnas_mem:
-
-        c.execute("""
-        ALTER TABLE memoria_media
-        ADD COLUMN usuario TEXT DEFAULT 'ricardo'
-        """)
-
-    # =====================================================
-    # TOKENS
-    # =====================================================
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS tokens_uso (
-        reactor TEXT PRIMARY KEY,
-        usados INTEGER
-    )
-    """)
-
-    for reactor in GROQ_KEYS.keys():
-
-        c.execute("""
-        INSERT OR IGNORE INTO tokens_uso
-        (reactor, usados)
-        VALUES (?, ?)
-        """, (reactor, 0))
-
     conn.commit()
     conn.close()
 
 # =========================================================
-# TOKENS
+# LOGIN
 # =========================================================
 
-def obtener_tokens():
+def login_local(username, password):
 
-    conn = conectar()
-    c = conn.cursor()
+    username = username.lower().strip()
+    password = password.strip()
 
-    c.execute("SELECT reactor, usados FROM tokens_uso")
+    if username not in USUARIOS:
+        return None
 
-    datos = c.fetchall()
+    user = USUARIOS[username]
 
-    conn.close()
+    if user["password"] == password:
+        return {
+            "username": username,
+            "rol": user["rol"]
+        }
 
-    return {x[0]: x[1] for x in datos}
+    return None
 
-def actualizar_tokens(reactor, cantidad):
+# =========================================================
+# VERIFICACIÓN REACTORES
+# =========================================================
 
-    conn = conectar()
-    c = conn.cursor()
+def verificar_reactor(key):
 
-    c.execute("""
-    UPDATE tokens_uso
-    SET usados = usados + ?
-    WHERE reactor = ?
-    """, (cantidad, reactor))
+    try:
 
-    conn.commit()
-    conn.close()
+        client = Groq(api_key=key)
+
+        client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "user",
+                    "content": "ping"
+                }
+            ],
+            max_tokens=5
+        )
+
+        return True
+
+    except:
+        return False
+
+# =========================================================
+# VERIFICAR SISTEMA
+# =========================================================
+
+def verificar_sistema():
+
+    estados = {}
+
+    # REACTORES
+    for i, key in enumerate(GROQ_KEYS):
+
+        nombre = f"REACTOR {i+1}"
+
+        ok = verificar_reactor(key)
+
+        estados[nombre] = ok
+
+    # DB
+    try:
+
+        conn = conectar()
+        conn.cursor().execute("SELECT 1")
+        conn.close()
+
+        estados["MEMORIA"] = True
+
+    except:
+        estados["MEMORIA"] = False
+
+    return estados
 
 # =========================================================
 # IA
@@ -157,27 +166,25 @@ def actualizar_tokens(reactor, cantidad):
 
 def ia(prompt):
 
-    for reactor, key in GROQ_KEYS.items():
+    for i, key in enumerate(GROQ_KEYS):
 
         try:
 
             client = Groq(api_key=key)
 
             respuesta = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 messages=prompt
             )
 
-            usados = respuesta.usage.total_tokens
+            st.session_state.reactor_actual = f"REACTOR {i+1}"
 
-            actualizar_tokens(reactor, usados)
-
-            return respuesta, reactor, usados
+            return respuesta
 
         except:
             continue
 
-    return None, None, 0
+    return None
 
 # =========================================================
 # MEMORIA
@@ -197,12 +204,16 @@ def guardar_memoria(usuario, texto):
     conn.commit()
     conn.close()
 
+# =========================================================
+# CONTEXTO
+# =========================================================
+
 def obtener_contexto(usuario):
 
     conn = conectar()
     c = conn.cursor()
 
-    # memoria media
+    # MEMORIA MEDIA
     c.execute("""
     SELECT contenido
     FROM memoria_media
@@ -211,9 +222,11 @@ def obtener_contexto(usuario):
     LIMIT 5
     """, (usuario,))
 
-    media = "\n".join([x[0] for x in c.fetchall()])
+    media = "\n".join([
+        x[0] for x in c.fetchall()
+    ])
 
-    # historial reciente
+    # CHAT
     c.execute("""
     SELECT rol, mensaje
     FROM chat_log
@@ -230,55 +243,15 @@ def obtener_contexto(usuario):
 
     for rol, msg in reversed(filas):
 
-        r = "assistant" if rol == "assistant" else "user"
-
         historial.append({
-            "role": r,
+            "role": rol,
             "content": msg
         })
 
     return media, historial
 
 # =========================================================
-# LEER ARCHIVOS
-# =========================================================
-
-def leer_archivo(archivo):
-
-    try:
-
-        nombre = archivo.name.lower()
-
-        extensiones_validas = [
-            ".txt",
-            ".md",
-            ".py",
-            ".json",
-            ".html",
-            ".css",
-            ".js"
-        ]
-
-        valido = False
-
-        for ext in extensiones_validas:
-
-            if nombre.endswith(ext):
-                valido = True
-                break
-
-        if not valido:
-            return None
-
-        contenido = archivo.read().decode("utf-8")
-
-        return contenido
-
-    except Exception as e:
-        return f"Error leyendo archivo: {e}"
-
-# =========================================================
-# RESPONDER
+# RESPUESTA
 # =========================================================
 
 def responder(prompt, usuario, rol):
@@ -286,29 +259,28 @@ def responder(prompt, usuario, rol):
     media, historial = obtener_contexto(usuario)
 
     system = f"""
-Eres JARVIS VORTEX.
-
-USUARIO:
-{usuario}
-
-ROL:
-{rol}
+USUARIO ACTUAL: {usuario}
+ROL: {rol}
 
 CONTEXTO:
 {media}
 
+Eres JARVIS.
+
 REGLAS:
-- Recuerda información importante.
-- Ignora ruido innecesario.
-- Mantén contexto.
-- No reveles información sensible a usuarios no admin.
-- Puedes analizar archivos de texto.
+- Recuerdas información importante.
+- Ignoras ruido.
+- No reveles datos internos a usuarios normales.
+- Solo admins pueden ver información técnica.
+- Sé preciso.
 """
 
-    mensajes = [{
-        "role": "system",
-        "content": system
-    }]
+    mensajes = [
+        {
+            "role": "system",
+            "content": system
+        }
+    ]
 
     mensajes.extend(historial)
 
@@ -317,12 +289,12 @@ REGLAS:
         "content": prompt
     })
 
-    res, reactor, usados = ia(mensajes)
+    res = ia(mensajes)
 
     if not res:
-        return "⚠️ Error con IA", reactor, usados
+        return "⚠️ Todos los reactores están offline."
 
-    return res.choices[0].message.content, reactor, usados
+    return res.choices[0].message.content
 
 # =========================================================
 # CHAT
@@ -343,6 +315,22 @@ def guardar_chat(usuario, rol, texto):
     conn.close()
 
 # =========================================================
+# ARCHIVOS
+# =========================================================
+
+def procesar_archivo(file):
+
+    try:
+
+        contenido = file.read().decode("utf-8")
+
+        return contenido
+
+    except:
+
+        return None
+
+# =========================================================
 # INIT
 # =========================================================
 
@@ -358,8 +346,11 @@ if "user" not in st.session_state:
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
+if "reactor_actual" not in st.session_state:
+    st.session_state.reactor_actual = "NINGUNO"
+
 # =========================================================
-# LOGIN
+# LOGIN UI
 # =========================================================
 
 if not st.session_state.user:
@@ -367,34 +358,72 @@ if not st.session_state.user:
     st.title("🔐 LOGIN JARVIS")
 
     username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
+
+    password = st.text_input(
+        "Contraseña",
+        type="password"
+    )
 
     if st.button("Entrar"):
 
-        username = username.strip().lower()
+        user = login_local(username, password)
 
-        if username in USUARIOS:
+        if user:
 
-            if password == USUARIOS[username]["password"]:
+            st.session_state.user = user
 
-                st.session_state.user = {
-                    "username": username,
-                    "rol": USUARIOS[username]["rol"]
-                }
+            st.success("Acceso concedido")
 
-                st.success("Acceso concedido")
-                st.rerun()
+            st.rerun()
 
-        st.error("Credenciales incorrectas")
+        else:
+
+            st.error("Credenciales incorrectas")
 
     st.stop()
 
 # =========================================================
-# USER
+# USUARIO
 # =========================================================
 
 user = st.session_state.user["username"]
 rol = st.session_state.user["rol"]
+
+# =========================================================
+# VERIFICACIÓN SISTEMA
+# SOLO ADMIN/COLAB
+# =========================================================
+
+if rol in ["admin", "colaborador"]:
+
+    if "verificacion_hecha" not in st.session_state:
+
+        st.title("⚙️ VERIFICANDO SISTEMA")
+
+        estados = verificar_sistema()
+
+        todo_ok = True
+
+        for nombre, estado in estados.items():
+
+            if estado:
+                st.success(f"{nombre}: ONLINE")
+            else:
+                st.error(f"{nombre}: OFFLINE")
+                todo_ok = False
+
+        if todo_ok:
+            st.success("✅ Sistema listo")
+        else:
+            st.warning("⚠️ Algunos módulos fallaron")
+
+        if st.button("Continuar"):
+
+            st.session_state.verificacion_hecha = True
+
+            st.rerun()
+
+        st.stop()
 
 # =========================================================
 # SIDEBAR
@@ -402,64 +431,37 @@ rol = st.session_state.user["rol"]
 
 with st.sidebar:
 
-    st.title("⚡ REACTORES")
+    st.header("⚡ REACTORES")
 
-    tokens = obtener_tokens()
-
-    for reactor, usados in tokens.items():
-
-        restante = LIMITE_TOKENS - usados
-
-        porcentaje = usados / LIMITE_TOKENS
-
-        st.subheader(reactor)
-
-        st.progress(min(porcentaje, 1.0))
-
-        st.write(f"🔥 Usados: {usados}")
-        st.write(f"⚡ Restantes: {restante}")
+    st.write(
+        f"🧠 Reactor activo: "
+        f"{st.session_state.reactor_actual}"
+    )
 
     st.divider()
 
-    st.subheader("📂 ANALIZAR ARCHIVO")
+    st.header("📂 ARCHIVOS")
 
     archivo = st.file_uploader(
-        "Subir archivo",
-        type=["txt", "md", "py", "json", "html", "css", "js"]
+        "Subir TXT",
+        type=["txt"]
     )
 
+    st.divider()
+
+    st.write(f"👤 Usuario: {user}")
+    st.write(f"🛡 Rol: {rol}")
+
 # =========================================================
-# MAIN
+# CHAT UI
 # =========================================================
 
 st.title("🔘 JARVIS VORTEX")
-st.write(f"👤 {user} | 🛡 {rol}")
-
-# =========================================================
-# ARCHIVO
-# =========================================================
-
-contenido_archivo = ""
-
-if archivo:
-
-    contenido_archivo = leer_archivo(archivo)
-
-    if contenido_archivo:
-
-        st.success("Archivo cargado")
-
-        with st.expander("Contenido"):
-
-            st.text(contenido_archivo[:5000])
-
-# =========================================================
-# MOSTRAR CHAT
-# =========================================================
 
 for m in st.session_state.chat:
 
     with st.chat_message(m["role"]):
+
         st.markdown(m["content"])
 
 # =========================================================
@@ -468,45 +470,66 @@ for m in st.session_state.chat:
 
 if prompt := st.chat_input("Habla con JARVIS..."):
 
-    prompt_final = prompt
+    # =====================================================
+    # ARCHIVO
+    # =====================================================
 
-    if contenido_archivo:
+    if archivo:
 
-        prompt_final += f"""
+        contenido = procesar_archivo(archivo)
 
-ARCHIVO:
-{contenido_archivo}
+        if contenido:
+
+            prompt = f"""
+ARCHIVO CARGADO:
+
+{contenido}
+
+INSTRUCCIÓN DEL USUARIO:
+{prompt}
 """
 
-    # guardar user
+    # =====================================================
+    # USER MSG
+    # =====================================================
+
     st.session_state.chat.append({
         "role": "user",
         "content": prompt
     })
 
     guardar_chat(user, "user", prompt)
+
     guardar_memoria(user, prompt)
 
-    # responder
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # =====================================================
+    # IA
+    # =====================================================
+
     with st.chat_message("assistant"):
 
-        with st.spinner("Procesando..."):
+        with st.spinner("JARVIS pensando..."):
 
-            respuesta, reactor, usados = responder(
-                prompt_final,
+            respuesta = responder(
+                prompt,
                 user,
                 rol
             )
 
-        st.markdown(respuesta)
+            st.markdown(respuesta)
 
-        st.caption(f"⚡ {reactor} | Tokens usados: {usados}")
+    # =====================================================
+    # SAVE
+    # =====================================================
 
-    # guardar respuesta
     st.session_state.chat.append({
         "role": "assistant",
         "content": respuesta
     })
 
     guardar_chat(user, "assistant", respuesta)
+
     guardar_memoria(user, respuesta)
