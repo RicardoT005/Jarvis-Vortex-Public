@@ -44,12 +44,19 @@ USUARIOS = {
 # ================= DB =================
 
 def conectar():
-    return sqlite3.connect(DB, check_same_thread=False)
+
+    return sqlite3.connect(
+        DB,
+        check_same_thread=False
+    )
 
 def init_db():
 
     conn = conectar()
+
     c = conn.cursor()
+
+    # ================= CHAT =================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS chat_log (
@@ -60,6 +67,8 @@ def init_db():
     )
     """)
 
+    # ================= MEMORIA =================
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS memoria_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +76,24 @@ def init_db():
         contenido TEXT
     )
     """)
+
+    # ================= MIGRACIONES =================
+
+    try:
+        c.execute("""
+        ALTER TABLE chat_log
+        ADD COLUMN usuario TEXT
+        """)
+    except:
+        pass
+
+    try:
+        c.execute("""
+        ALTER TABLE memoria_media
+        ADD COLUMN usuario TEXT
+        """)
+    except:
+        pass
 
     conn.commit()
     conn.close()
@@ -107,7 +134,7 @@ def ia(prompt):
 
             return respuesta
 
-        except:
+        except Exception:
             continue
 
     st.session_state.reactor = "NINGUNO"
@@ -135,6 +162,7 @@ def guardar_memoria(usuario, texto):
 def guardar_chat(usuario, rol, texto):
 
     conn = conectar()
+
     c = conn.cursor()
 
     c.execute("""
@@ -144,6 +172,7 @@ def guardar_chat(usuario, rol, texto):
     """, (usuario, rol, texto))
 
     conn.commit()
+
     conn.close()
 
 # ================= CONTEXTO =================
@@ -151,7 +180,10 @@ def guardar_chat(usuario, rol, texto):
 def obtener_contexto(usuario):
 
     conn = conectar()
+
     c = conn.cursor()
+
+    # ================= MEMORIA =================
 
     c.execute("""
     SELECT contenido
@@ -161,7 +193,11 @@ def obtener_contexto(usuario):
     LIMIT 10
     """, (usuario,))
 
-    memoria = "\n".join([x[0] for x in c.fetchall()])
+    memoria = "\n".join([
+        x[0] for x in c.fetchall()
+    ])
+
+    # ================= CHAT =================
 
     c.execute("""
     SELECT rol, mensaje
@@ -186,7 +222,7 @@ def obtener_contexto(usuario):
 
     return memoria, historial
 
-# ================= LECTOR =================
+# ================= LEER ARCHIVOS =================
 
 def leer_archivo(archivo):
 
@@ -196,18 +232,19 @@ def leer_archivo(archivo):
 
     if nombre.endswith(".txt"):
 
+        datos = archivo.read()
+
         codificaciones = [
             "utf-8",
             "latin-1",
             "cp1252"
         ]
 
-        datos = archivo.read()
-
         for cod in codificaciones:
 
             try:
                 return datos.decode(cod)
+
             except:
                 pass
 
@@ -238,34 +275,38 @@ def leer_archivo(archivo):
 
     return "⚠ Formato no compatible"
 
-# ================= PALABRAS CLAVE =================
+# ================= KEYWORDS =================
 
 def extraer_keywords(texto):
 
     ignorar = [
         "el", "la", "los", "las",
-        "de", "del", "y", "o",
-        "que", "como", "para",
-        "por", "un", "una",
-        "es", "en", "al",
-        "se", "me", "mi"
+        "de", "del", "para",
+        "por", "como", "que",
+        "una", "unos", "unas",
+        "con", "sin", "sobre",
+        "este", "esta"
     ]
 
     palabras = texto.lower().split()
 
-    keywords = []
+    resultado = []
 
-    for p in palabras:
+    for palabra in palabras:
 
-        p = p.strip(".,!?()[]{}:;\"'")
+        palabra = palabra.strip(
+            ".,!?()[]{}:;\"'"
+        )
 
-        if len(p) > 3 and p not in ignorar:
+        if len(palabra) > 3:
 
-            keywords.append(p)
+            if palabra not in ignorar:
 
-    return list(set(keywords))
+                resultado.append(palabra)
 
-# ================= BUSCADOR CONTEXTO =================
+    return list(set(resultado))
+
+# ================= CONTEXTO RELEVANTE =================
 
 def buscar_contexto_relevante(prompt):
 
@@ -282,13 +323,13 @@ def buscar_contexto_relevante(prompt):
 
     for fragmento in fragmentos:
 
-        fragmento_lower = fragmento.lower()
-
         coincidencias = 0
+
+        f = fragmento.lower()
 
         for palabra in keywords:
 
-            if palabra in fragmento_lower:
+            if palabra in f:
                 coincidencias += 1
 
         if coincidencias > 0:
@@ -329,9 +370,12 @@ def buscar_google(query):
             class_="BNeawe vvjwJb AP7Wnd"
         )[:5]:
 
-            resultados.append(g.get_text())
+            resultados.append(
+                g.get_text()
+            )
 
         if len(resultados) == 0:
+
             return "⚠ No se encontraron resultados"
 
         return "\n".join(resultados)
@@ -370,12 +414,12 @@ CONTEXTO WEB:
 
 REGLAS:
 
-- Usas SOLO contexto relevante.
+- Usas SOLO el contexto relevante.
 - Ignoras ruido.
 - Proteges información sensible.
-- No revelas datos internos a usuarios normales.
+- No revelas datos internos.
+- Analizas TXT y PDF.
 - Admin y colaboradores tienen permisos elevados.
-- Puedes analizar TXT y PDF.
 """
 
     mensajes = [{
@@ -433,19 +477,26 @@ if not st.session_state.user:
 
     if st.button("Entrar"):
 
-        user = login_user(username, password)
+        user = login_user(
+            username,
+            password
+        )
 
         if user:
 
             st.session_state.user = user
 
-            st.success("Acceso concedido")
+            st.success(
+                "Acceso concedido"
+            )
 
             st.rerun()
 
         else:
 
-            st.error("Credenciales incorrectas")
+            st.error(
+                "Credenciales incorrectas"
+            )
 
     st.stop()
 
@@ -483,7 +534,7 @@ with st.sidebar:
         st.session_state.archivo_contexto = contenido
 
         st.success(
-            "Archivo cargado al contexto"
+            "Archivo cargado"
         )
 
         st.text_area(
@@ -494,7 +545,7 @@ with st.sidebar:
 
     st.divider()
 
-    # ================= INTERNET =================
+    # ================= GOOGLE =================
 
     st.markdown("## 🌐 INTERNET")
 
@@ -506,11 +557,15 @@ with st.sidebar:
 
         with st.spinner("Buscando..."):
 
-            resultados = buscar_google(busqueda)
+            resultados = buscar_google(
+                busqueda
+            )
 
             st.session_state.web_contexto = resultados
 
-            st.success("Resultados cargados")
+            st.success(
+                "Resultados cargados"
+            )
 
             st.text_area(
                 "Resultados",
@@ -524,7 +579,7 @@ with st.sidebar:
 
     st.write(f"🛡 Rol: {rol}")
 
-# ================= CHAT =================
+# ================= PANEL =================
 
 st.title("⚙ JARVIS VORTEX")
 
@@ -534,18 +589,31 @@ for m in st.session_state.chat:
 
         st.markdown(m["content"])
 
-# ================= INPUT =================
+# ================= CHAT =================
 
-if prompt := st.chat_input("Habla con JARVIS..."):
+if prompt := st.chat_input(
+    "Habla con JARVIS..."
+):
+
+    # ================= USER =================
 
     st.session_state.chat.append({
         "role": "user",
         "content": prompt
     })
 
-    guardar_chat(user, "user", prompt)
+    guardar_chat(
+        user,
+        "user",
+        prompt
+    )
 
-    guardar_memoria(user, prompt)
+    guardar_memoria(
+        user,
+        prompt
+    )
+
+    # ================= IA =================
 
     with st.chat_message("assistant"):
 
@@ -556,6 +624,8 @@ if prompt := st.chat_input("Habla con JARVIS..."):
         )
 
         st.markdown(respuesta)
+
+    # ================= SAVE =================
 
     st.session_state.chat.append({
         "role": "assistant",
