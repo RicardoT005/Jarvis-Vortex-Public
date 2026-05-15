@@ -1,11 +1,12 @@
 import streamlit as st
 import sqlite3
-import os
 from groq import Groq
 
 st.set_page_config(page_title="JARVIS VORTEX", layout="wide")
 
-# ================= CONFIG =================
+# =========================================================
+# CONFIG
+# =========================================================
 
 DB = "jarvis_memoria.db"
 
@@ -17,24 +18,30 @@ GROQ_KEYS = {
 
 LIMITE_TOKENS = 6000
 
-# ================= LOGIN LOCAL =================
+# =========================================================
+# LOGIN LOCAL
+# =========================================================
 
 USUARIOS = {
     "ricardo": {
         "password": "1234",
         "rol": "admin"
     },
+
     "colaborador": {
         "password": "1234",
         "rol": "colaborador"
     },
+
     "usuario": {
         "password": "1234",
         "rol": "usuario"
     }
 }
 
-# ================= DB =================
+# =========================================================
+# DB
+# =========================================================
 
 def conectar():
     return sqlite3.connect(DB, check_same_thread=False)
@@ -44,7 +51,9 @@ def init_db():
     conn = conectar()
     c = conn.cursor()
 
-    # ================= CHAT =================
+    # =====================================================
+    # CHAT LOG
+    # =====================================================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS chat_log (
@@ -55,7 +64,21 @@ def init_db():
     )
     """)
 
-    # ================= MEMORIA =================
+    # detectar columnas existentes
+    c.execute("PRAGMA table_info(chat_log)")
+    columnas = [col[1] for col in c.fetchall()]
+
+    # agregar columna usuario si no existe
+    if "usuario" not in columnas:
+
+        c.execute("""
+        ALTER TABLE chat_log
+        ADD COLUMN usuario TEXT DEFAULT 'ricardo'
+        """)
+
+    # =====================================================
+    # MEMORIA MEDIA
+    # =====================================================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS memoria_media (
@@ -65,7 +88,19 @@ def init_db():
     )
     """)
 
-    # ================= TOKENS =================
+    c.execute("PRAGMA table_info(memoria_media)")
+    columnas_mem = [col[1] for col in c.fetchall()]
+
+    if "usuario" not in columnas_mem:
+
+        c.execute("""
+        ALTER TABLE memoria_media
+        ADD COLUMN usuario TEXT DEFAULT 'ricardo'
+        """)
+
+    # =====================================================
+    # TOKENS
+    # =====================================================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS tokens_uso (
@@ -85,7 +120,9 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ================= TOKENS =================
+# =========================================================
+# TOKENS
+# =========================================================
 
 def obtener_tokens():
 
@@ -94,11 +131,11 @@ def obtener_tokens():
 
     c.execute("SELECT reactor, usados FROM tokens_uso")
 
-    data = c.fetchall()
+    datos = c.fetchall()
 
     conn.close()
 
-    return {x[0]: x[1] for x in data}
+    return {x[0]: x[1] for x in datos}
 
 def actualizar_tokens(reactor, cantidad):
 
@@ -114,7 +151,9 @@ def actualizar_tokens(reactor, cantidad):
     conn.commit()
     conn.close()
 
-# ================= IA =================
+# =========================================================
+# IA
+# =========================================================
 
 def ia(prompt):
 
@@ -140,7 +179,9 @@ def ia(prompt):
 
     return None, None, 0
 
-# ================= MEMORIA =================
+# =========================================================
+# MEMORIA
+# =========================================================
 
 def guardar_memoria(usuario, texto):
 
@@ -172,7 +213,7 @@ def obtener_contexto(usuario):
 
     media = "\n".join([x[0] for x in c.fetchall()])
 
-    # historial
+    # historial reciente
     c.execute("""
     SELECT rol, mensaje
     FROM chat_log
@@ -198,7 +239,9 @@ def obtener_contexto(usuario):
 
     return media, historial
 
-# ================= LEER ARCHIVOS =================
+# =========================================================
+# LEER ARCHIVOS
+# =========================================================
 
 def leer_archivo(archivo):
 
@@ -234,7 +277,9 @@ def leer_archivo(archivo):
     except Exception as e:
         return f"Error leyendo archivo: {e}"
 
-# ================= RESPONDER =================
+# =========================================================
+# RESPONDER
+# =========================================================
 
 def responder(prompt, usuario, rol):
 
@@ -253,12 +298,11 @@ CONTEXTO:
 {media}
 
 REGLAS:
-
 - Recuerda información importante.
-- Ignora ruido.
+- Ignora ruido innecesario.
 - Mantén contexto.
 - No reveles información sensible a usuarios no admin.
-- Puedes analizar archivos.
+- Puedes analizar archivos de texto.
 """
 
     mensajes = [{
@@ -280,7 +324,9 @@ REGLAS:
 
     return res.choices[0].message.content, reactor, usados
 
-# ================= CHAT =================
+# =========================================================
+# CHAT
+# =========================================================
 
 def guardar_chat(usuario, rol, texto):
 
@@ -296,11 +342,15 @@ def guardar_chat(usuario, rol, texto):
     conn.commit()
     conn.close()
 
-# ================= INIT =================
+# =========================================================
+# INIT
+# =========================================================
 
 init_db()
 
-# ================= SESSION =================
+# =========================================================
+# SESSION
+# =========================================================
 
 if "user" not in st.session_state:
     st.session_state.user = None
@@ -308,7 +358,9 @@ if "user" not in st.session_state:
 if "chat" not in st.session_state:
     st.session_state.chat = []
 
-# ================= LOGIN =================
+# =========================================================
+# LOGIN
+# =========================================================
 
 if not st.session_state.user:
 
@@ -337,12 +389,16 @@ if not st.session_state.user:
 
     st.stop()
 
-# ================= USER =================
+# =========================================================
+# USER
+# =========================================================
 
 user = st.session_state.user["username"]
 rol = st.session_state.user["rol"]
 
-# ================= SIDEBAR =================
+# =========================================================
+# SIDEBAR
+# =========================================================
 
 with st.sidebar:
 
@@ -372,12 +428,16 @@ with st.sidebar:
         type=["txt", "md", "py", "json", "html", "css", "js"]
     )
 
-# ================= MAIN =================
+# =========================================================
+# MAIN
+# =========================================================
 
 st.title("🔘 JARVIS VORTEX")
 st.write(f"👤 {user} | 🛡 {rol}")
 
-# ================= ARCHIVO =================
+# =========================================================
+# ARCHIVO
+# =========================================================
 
 contenido_archivo = ""
 
@@ -393,14 +453,18 @@ if archivo:
 
             st.text(contenido_archivo[:5000])
 
-# ================= CHAT =================
+# =========================================================
+# MOSTRAR CHAT
+# =========================================================
 
 for m in st.session_state.chat:
 
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
 
-# ================= INPUT =================
+# =========================================================
+# INPUT
+# =========================================================
 
 if prompt := st.chat_input("Habla con JARVIS..."):
 
@@ -414,7 +478,7 @@ ARCHIVO:
 {contenido_archivo}
 """
 
-    # guardar usuario
+    # guardar user
     st.session_state.chat.append({
         "role": "user",
         "content": prompt
@@ -423,7 +487,7 @@ ARCHIVO:
     guardar_chat(user, "user", prompt)
     guardar_memoria(user, prompt)
 
-    # respuesta
+    # responder
     with st.chat_message("assistant"):
 
         with st.spinner("Procesando..."):
