@@ -50,30 +50,68 @@ def init_db():
 
     c = conn.cursor()
 
-    # ================= CHAT =================
+    # =====================================================
+    # CHAT LOG
+    # =====================================================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS chat_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT,
+        usuario TEXT DEFAULT 'desconocido',
         rol TEXT,
         mensaje TEXT
     )
     """)
 
-    # ================= MEMORIA =================
+    # =====================================================
+    # MEMORIA
+    # =====================================================
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS memoria_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        usuario TEXT,
+        usuario TEXT DEFAULT 'desconocido',
         contenido TEXT
     )
     """)
 
-    conn.commit()
-    conn.close()
+    # =====================================================
+    # MIGRACION CHAT_LOG
+    # =====================================================
 
+    c.execute("PRAGMA table_info(chat_log)")
+
+    columnas_chat = [
+        col[1] for col in c.fetchall()
+    ]
+
+    if "usuario" not in columnas_chat:
+
+        c.execute("""
+        ALTER TABLE chat_log
+        ADD COLUMN usuario TEXT DEFAULT 'desconocido'
+        """)
+
+    # =====================================================
+    # MIGRACION MEMORIA
+    # =====================================================
+
+    c.execute("PRAGMA table_info(memoria_media)")
+
+    columnas_memoria = [
+        col[1] for col in c.fetchall()
+    ]
+
+    if "usuario" not in columnas_memoria:
+
+        c.execute("""
+        ALTER TABLE memoria_media
+        ADD COLUMN usuario TEXT DEFAULT 'desconocido'
+        """)
+
+    conn.commit()
+
+    conn.close()
 # =========================================================
 # LOGIN
 # =========================================================
