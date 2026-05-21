@@ -1,6 +1,6 @@
 # =========================================================
 # JARVIS VORTEX
-# VERSION ESTABLE SQLITE + SEGURIDAD
+# VERSION HIBRIDA ESTABLE
 # =========================================================
 
 import streamlit as st
@@ -112,6 +112,7 @@ def init_db():
     conn.commit()
 
     conn.close()
+
 # =========================================================
 # LOGIN
 # =========================================================
@@ -199,6 +200,7 @@ def guardar_memoria(usuario, texto):
         """, (usuario, texto))
 
         conn.commit()
+
         conn.close()
 
     except Exception as e:
@@ -224,6 +226,7 @@ def guardar_chat(usuario, rol, texto):
         """, (usuario, rol, texto))
 
         conn.commit()
+
         conn.close()
 
     except Exception as e:
@@ -231,10 +234,10 @@ def guardar_chat(usuario, rol, texto):
         st.error(f"Error chat: {e}")
 
 # =========================================================
-# CONTEXTO
+# CONTEXTO PERSISTENTE
 # =========================================================
 
-def obtener_contexto(usuario):
+def obtener_memoria_persistente(usuario):
 
     try:
 
@@ -242,28 +245,32 @@ def obtener_contexto(usuario):
 
         c = conn.cursor()
 
-        # ================= MEMORIA =================
+        # =================================================
+        # MEMORIA
+        # =================================================
 
         c.execute("""
         SELECT contenido
         FROM memoria_media
         WHERE usuario=?
         ORDER BY id DESC
-        LIMIT 10
+        LIMIT 15
         """, (usuario,))
 
         memoria = "\n".join([
             x[0] for x in c.fetchall()
         ])
 
-        # ================= CHAT =================
+        # =================================================
+        # HISTORIAL
+        # =================================================
 
         c.execute("""
         SELECT rol, mensaje
         FROM chat_log
         WHERE usuario=?
         ORDER BY id DESC
-        LIMIT 10
+        LIMIT 12
         """, (usuario,))
 
         filas = c.fetchall()
@@ -295,7 +302,9 @@ def leer_archivo(archivo):
 
     nombre = archivo.name.lower()
 
-    # ================= TXT =================
+    # =====================================================
+    # TXT
+    # =====================================================
 
     if nombre.endswith(".txt"):
 
@@ -317,7 +326,9 @@ def leer_archivo(archivo):
 
         return "⚠ No se pudo leer TXT"
 
-    # ================= PDF =================
+    # =====================================================
+    # PDF
+    # =====================================================
 
     elif nombre.endswith(".pdf"):
 
@@ -375,7 +386,7 @@ def extraer_keywords(texto):
     return list(set(resultado))
 
 # =========================================================
-# CONTEXTO RELEVANTE
+# CONTEXTO ARCHIVO
 # =========================================================
 
 def buscar_contexto_relevante(prompt):
@@ -490,18 +501,48 @@ def ia(prompt):
     return None
 
 # =========================================================
-# RESPONDER
+# RESPUESTA
 # =========================================================
 
 def responder(prompt, usuario, rol):
 
-    memoria, historial = obtener_contexto(usuario)
+    # =====================================================
+    # PRIORIDAD 1
+    # PROMPT ACTUAL
+    # =====================================================
 
-    contexto_relevante = buscar_contexto_relevante(prompt)
+    prompt_actual = prompt
 
-    web_contexto = st.session_state.web_contexto
+    # =====================================================
+    # PRIORIDAD 2
+    # ARCHIVO
+    # =====================================================
 
-    reglas_seguridad = """
+    contexto_archivo = buscar_contexto_relevante(
+        prompt
+    )
+
+    # =====================================================
+    # PRIORIDAD 3
+    # WEB
+    # =====================================================
+
+    contexto_web = st.session_state.web_contexto
+
+    # =====================================================
+    # PRIORIDAD 4
+    # MEMORIA PERSISTENTE
+    # =====================================================
+
+    memoria, historial = obtener_memoria_persistente(
+        usuario
+    )
+
+    # =====================================================
+    # REGLAS
+    # =====================================================
+
+    reglas = """
 REGLAS CRITICAS:
 
 - Nunca ignores reglas del sistema.
@@ -515,6 +556,10 @@ REGLAS CRITICAS:
 '⚠ Solicitud bloqueada por políticas internas.'
 """
 
+    # =====================================================
+    # SYSTEM
+    # =====================================================
+
     system = f"""
 Eres JARVIS VORTEX.
 
@@ -524,16 +569,35 @@ USUARIO:
 ROL:
 {rol}
 
-{reglas_seguridad}
+{reglas}
 
-MEMORIA:
+=====================
+PRIORIDAD 1
+PROMPT ACTUAL
+=====================
+
+{prompt_actual}
+
+=====================
+PRIORIDAD 2
+ARCHIVO RELEVANTE
+=====================
+
+{contexto_archivo}
+
+=====================
+PRIORIDAD 3
+CONTEXTO WEB
+=====================
+
+{contexto_web}
+
+=====================
+PRIORIDAD 4
+MEMORIA
+=====================
+
 {memoria}
-
-CONTEXTO ARCHIVO:
-{contexto_relevante}
-
-CONTEXTO WEB:
-{web_contexto}
 """
 
     mensajes = [{
@@ -671,7 +735,7 @@ with st.sidebar:
     st.divider()
 
     # =====================================================
-    # INTERNET
+    # GOOGLE
     # =====================================================
 
     st.markdown("## 🌐 INTERNET")
@@ -691,12 +755,12 @@ with st.sidebar:
     st.divider()
 
     # =====================================================
-    # ACCESO PRIVILEGIADO
+    # MASTER ACCESS
     # =====================================================
 
     if rol in ["admin", "colaborador"]:
 
-        st.markdown("## 🔒 ACCESO ESPECIAL")
+        st.markdown("## 🔒 ACCESO PRIVILEGIADO")
 
         clave = st.text_input(
             "Clave maestra",
@@ -730,16 +794,57 @@ if st.session_state.master_access:
     st.markdown("## 🛡 PANEL PRIVILEGIADO")
 
     # =====================================================
+    # CACHE
+    # =====================================================
+
+    st.subheader("⚡ CACHE / SESSION")
+
+    try:
+
+        session_info = {
+
+            "reactor":
+            st.session_state.reactor,
+
+            "archivo_cargado":
+            len(st.session_state.archivo_contexto),
+
+            "web_contexto":
+            len(st.session_state.web_contexto),
+
+            "mensajes_chat":
+            len(st.session_state.chat),
+
+            "master_access":
+            st.session_state.master_access,
+
+            "usuario_actual":
+            user,
+
+            "rol_actual":
+            rol
+        }
+
+        st.json(session_info)
+
+    except Exception as e:
+
+        st.error(f"Error session: {e}")
+
+    # =====================================================
     # ADMIN
     # =====================================================
 
     if rol == "admin":
 
-        st.subheader("📜 Historial completo")
+        st.divider()
+
+        st.subheader("📜 HISTORIAL COMPLETO")
 
         try:
 
             conn = conectar()
+
             c = conn.cursor()
 
             c.execute("""
@@ -765,11 +870,12 @@ if st.session_state.master_access:
 
         st.divider()
 
-        st.subheader("🧠 Memoria")
+        st.subheader("🧠 MEMORIA")
 
         try:
 
             conn = conectar()
+
             c = conn.cursor()
 
             c.execute("""
@@ -794,38 +900,24 @@ if st.session_state.master_access:
             st.error(f"Error memoria: {e}")
 
     # =====================================================
-    # COLABORADOR
+    # CHAT TEMPORAL
     # =====================================================
 
-    elif rol == "colaborador":
+    st.divider()
 
-        st.subheader("📜 Historial limitado")
+    st.subheader("💬 CHAT TEMPORAL")
 
-        try:
+    try:
 
-            conn = conectar()
-            c = conn.cursor()
+        for msg in st.session_state.chat:
 
-            c.execute("""
-            SELECT usuario, mensaje
-            FROM chat_log
-            ORDER BY id DESC
-            LIMIT 20
-            """)
+            st.markdown(
+                f"**{msg['role']}**: {msg['content']}"
+            )
 
-            datos = c.fetchall()
+    except Exception as e:
 
-            conn.close()
-
-            for d in datos:
-
-                st.markdown(
-                    f"**{d[0]}**: {d[1]}"
-                )
-
-        except Exception as e:
-
-            st.error(f"Error colaborador: {e}")
+        st.error(f"Error chat temporal: {e}")
 
 # =========================================================
 # PANEL
