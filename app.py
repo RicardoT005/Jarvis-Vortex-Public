@@ -23,23 +23,7 @@ GROQ_KEYS = [
 
 # ================= LOGIN LOCAL =================
 
-USUARIOS = {
-
-    "ricardo": {
-        "password": "1234",
-        "rol": "admin"
-    },
-
-    "colab1": {
-        "password": "1234",
-        "rol": "colaborador"
-    },
-
-    "user1": {
-        "password": "1234",
-        "rol": "usuario"
-    }
-}
+USUARIOS = st.secrets["USUARIOS"]
 
 # ================= DB =================
 
