@@ -758,7 +758,7 @@ with st.sidebar:
     # MASTER ACCESS
     # =====================================================
 
-    if rol in ["admin", "colaborador"]:
+    if rol in ["creador", "colaborador"]:
 
         st.markdown("## 🔒 ACCESO PRIVILEGIADO")
 
@@ -835,7 +835,7 @@ if st.session_state.master_access:
     # ADMIN
     # =====================================================
 
-    if rol == "admin":
+    if rol == "creador":
 
         st.divider()
 
