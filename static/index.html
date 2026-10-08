@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Jarvis Vortex</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            jarvis: {
+              bg: '#0a0e17',
+              panel: '#0f172a',
+              card: '#1e293b',
+              blue: '#3b82f6',
+              'blue-dim': '#1d4ed8',
+              'blue-glow': '#60a5fa',
+              cyan: '#22d3ee',
+              border: '#1e3a5f',
+              text: '#e2e8f0',
+              muted: '#94a3b8',
+              success: '#22c55e',
+              warning: '#eab308',
+              danger: '#ef4444',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          boxShadow: {
+            glow: '0 0 20px rgba(59, 130, 246, 0.25)',
+            'glow-sm': '0 0 10px rgba(59, 130, 246, 0.2)',
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { background: #0a0e17; }
+    .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #1e3a5f; border-radius: 3px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+
+    /* Typewriter cursor */
+    .typing-cursor::after {
+      content: '▋';
+      animation: blink 1s step-end infinite;
+      color: #60a5fa;
+      margin-left: 2px;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* Reactor pulse */
+    .reactor-online { box-shadow: 0 0 12px rgba(34, 197, 94, 0.5); }
+    .reactor-degraded { box-shadow: 0 0 12px rgba(234, 179, 8, 0.5); }
+    .reactor-offline { box-shadow: 0 0 12px rgba(239, 68, 68, 0.4); }
+    .reactor-emergency { box-shadow: 0 0 16px rgba(239, 68, 68, 0.7); animation: pulse-red 1.5s ease-in-out infinite; }
+    @keyframes pulse-red {
+      0%, 100% { box-shadow: 0 0 12px rgba(239, 68, 68, 0.5); }
+      50% { box-shadow: 0 0 22px rgba(239, 68, 68, 0.9); }
+    }
+
+    /* Message animation */
+    .msg-enter { animation: msgIn 0.3s ease-out; }
+    @keyframes msgIn {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Sidebar transition */
+    .sidebar {
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    @media (max-width: 767px) {
+      .sidebar { transform: translateX(100%); }
+      .sidebar.open { transform: translateX(0); }
+    }
+
+    /* Glow line */
+    .glow-line {
+      background: linear-gradient(90deg, transparent, #3b82f6, transparent);
+      height: 1px;
+    }
+  </style>
+  <script src="config.js"></script>
+</head>
+<body class="h-full font-sans text-jarvis-text antialiased overflow-hidden">
+
+  <div id="app" class="h-full flex flex-col md:flex-row">
+
+    <!-- ==================== MAIN CHAT AREA ==================== -->
+    <main class="flex-1 flex flex-col min-w-0 h-full relative">
+
+      <!-- Top bar -->
+      <header class="flex items-center justify-between px-4 py-3 border-b border-jarvis-border bg-jarvis-panel/80 backdrop-blur-md z-20">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-jarvis-blue to-jarvis-cyan flex items-center justify-center shadow-glow-sm">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-sm font-semibold tracking-wide">JARVIS VORTEX</h1>
+            <p class="text-[11px] text-jarvis-muted">MultSoftCreations · v2.0</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <!-- Voice toggle -->
+          <button id="btn-voice" onclick="toggleVoice()" title="Voz automática"
+            class="p-2 rounded-lg hover:bg-jarvis-card transition-colors text-jarvis-blue">
+            <svg id="icon-voice-on" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+            </svg>
+            <svg id="icon-voice-off" class="w-5 h-5 hidden text-jarvis-muted" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/>
+            </svg>
+          </button>
+
+          <!-- Toggle sidebar (mobile) -->
+          <button id="btn-sidebar" onclick="toggleSidebar()" 
+            class="md:hidden p-2 rounded-lg hover:bg-jarvis-card transition-colors text-jarvis-blue">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Emergency banner -->
+      <div id="emergency-banner" class="hidden bg-jarvis-danger/20 border-b border-jarvis-danger/40 px-4 py-2 text-center text-sm text-red-300">
+        ⚠ Reactor de emergencia activado. Los reactores principales no responden.
+      </div>
+
+      <!-- Messages -->
+      <div id="messages" class="flex-1 overflow-y-auto scrollbar-thin px-4 py-6 space-y-5">
+        <!-- Welcome message -->
+        <div class="msg-enter flex gap-3 max-w-3xl mx-auto">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-jarvis-blue to-jarvis-cyan flex-shrink-0 flex items-center justify-center text-xs font-bold text-white">J</div>
+          <div class="bg-jarvis-card/60 border border-jarvis-border rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed">
+            Buenos días, señor. Soy <strong class="text-jarvis-blue-glow">Jarvis</strong>, su asistente personal.
+            Sistemas operativos. ¿En qué puedo ayudarle?
+          </div>
+        </div>
+      </div>
+
+      <!-- Input area -->
+      <div class="border-t border-jarvis-border bg-jarvis-panel/90 backdrop-blur-md px-4 py-3 z-20">
+        <form id="chat-form" class="max-w-3xl mx-auto flex gap-2 items-end" onsubmit="sendMessage(event)">
+          <div class="flex-1 relative">
+            <textarea id="input" rows="1" placeholder="Habla con Jarvis..."
+              class="w-full bg-jarvis-card border border-jarvis-border rounded-xl px-4 py-3 pr-12 text-sm text-jarvis-text placeholder-jarvis-muted resize-none focus:outline-none focus:border-jarvis-blue focus:shadow-glow-sm transition-all max-h-32"
+              onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          </div>
+          <button type="submit" id="btn-send"
+            class="flex-shrink-0 w-11 h-11 rounded-xl bg-jarvis-blue hover:bg-jarvis-blue-dim active:scale-95 transition-all flex items-center justify-center shadow-glow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+            </svg>
+          </button>
+        </form>
+        <p class="text-center text-[10px] text-jarvis-muted mt-2 max-w-3xl mx-auto">
+          Jarvis Vortex · MultSoftCreations · Memoria persistente activa
+        </p>
+      </div>
+    </main>
+
+    <!-- ==================== RIGHT SIDEBAR ==================== -->
+    <aside id="sidebar" class="sidebar fixed md:static inset-y-0 right-0 z-30 w-72 md:w-80 bg-jarvis-panel border-l border-jarvis-border flex flex-col h-full md:translate-x-0">
+
+      <!-- Sidebar header -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-jarvis-border">
+        <h2 class="text-xs font-semibold tracking-widest text-jarvis-muted uppercase">Panel de Control</h2>
+        <button onclick="toggleSidebar()" class="md:hidden p-1.5 rounded-lg hover:bg-jarvis-card text-jarvis-muted">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto scrollbar-thin p-4 space-y-5">
+
+        <!-- Reactors -->
+        <section>
+          <h3 class="text-[11px] font-semibold tracking-wider text-jarvis-muted uppercase mb-3 flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-jarvis-blue"></span> Reactores
+          </h3>
+
+          <div class="space-y-2.5">
+            <!-- Reactor 1 -->
+            <div id="reactor-1" class="reactor-card bg-jarvis-card/50 border border-jarvis-border rounded-xl p-3 flex items-center gap-3 transition-all">
+              <div class="reactor-dot w-3 h-3 rounded-full bg-jarvis-success reactor-online flex-shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium">Reactor 1</span>
+                  <span class="reactor-status text-[10px] font-mono text-jarvis-success">ONLINE</span>
+                </div>
+                <p class="text-[11px] text-jarvis-muted mt-0.5">Principal · Prioridad alta</p>
+              </div>
+            </div>
+
+            <!-- Reactor 2 -->
+            <div id="reactor-2" class="reactor-card bg-jarvis-card/50 border border-jarvis-border rounded-xl p-3 flex items-center gap-3 transition-all">
+              <div class="reactor-dot w-3 h-3 rounded-full bg-jarvis-success reactor-online flex-shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium">Reactor 2</span>
+                  <span class="reactor-status text-[10px] font-mono text-jarvis-success">ONLINE</span>
+                </div>
+                <p class="text-[11px] text-jarvis-muted mt-0.5">Secundario · Respaldo</p>
+              </div>
+            </div>
+
+            <!-- Reactor 3 - Emergency -->
+            <div id="reactor-3" class="reactor-card bg-jarvis-card/50 border border-jarvis-border rounded-xl p-3 flex items-center gap-3 transition-all opacity-60">
+              <div class="reactor-dot w-3 h-3 rounded-full bg-jarvis-muted flex-shrink-0"></div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium">Reactor 3</span>
+                  <span class="reactor-status text-[10px] font-mono text-jarvis-muted">STANDBY</span>
+                </div>
+                <p class="text-[11px] text-jarvis-muted mt-0.5">Emergencia · Solo si fallan 1 y 2</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="glow-line"></div>
+
+        <!-- System info -->
+        <section>
+          <h3 class="text-[11px] font-semibold tracking-wider text-jarvis-muted uppercase mb-3 flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-jarvis-cyan"></span> Sistema
+          </h3>
+          <div class="bg-jarvis-card/40 border border-jarvis-border rounded-xl p-3 space-y-2 text-xs">
+            <div class="flex justify-between">
+              <span class="text-jarvis-muted">Estado</span>
+              <span id="sys-status" class="text-jarvis-success font-medium">Operativo</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-jarvis-muted">Memoria</span>
+              <span class="text-jarvis-blue-glow">Persistente</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-jarvis-muted">Usuario</span>
+              <span id="sys-user" class="text-jarvis-text">—</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-jarvis-muted">Conversación</span>
+              <span id="sys-conv" class="font-mono text-jarvis-muted">—</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="glow-line"></div>
+
+        <!-- Identity -->
+        <section>
+          <h3 class="text-[11px] font-semibold tracking-wider text-jarvis-muted uppercase mb-3 flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-jarvis-blue-glow"></span> Identidad
+          </h3>
+          <div class="bg-jarvis-card/40 border border-jarvis-border rounded-xl p-3 text-xs space-y-1.5">
+            <p><span class="text-jarvis-muted">Nombre:</span> <span class="text-jarvis-blue-glow font-medium">Jarvis</span></p>
+            <p><span class="text-jarvis-muted">Dueño:</span> Ricardo Torres</p>
+            <p><span class="text-jarvis-muted">Marca:</span> MultSoftCreations</p>
+            <p><span class="text-jarvis-muted">Versión:</span> 2.0.0</p>
+          </div>
+        </section>
+
+        <!-- Quick actions -->
+        <section>
+          <h3 class="text-[11px] font-semibold tracking-wider text-jarvis-muted uppercase mb-3">Acciones</h3>
+          <div class="space-y-2">
+            <button onclick="newConversation()" class="w-full text-left px-3 py-2.5 rounded-lg bg-jarvis-card/50 border border-jarvis-border hover:border-jarvis-blue/50 hover:bg-jarvis-card text-xs transition-all flex items-center gap-2">
+              <svg class="w-4 h-4 text-jarvis-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              Nueva conversación
+            </button>
+            <button onclick="clearChatUI()" class="w-full text-left px-3 py-2.5 rounded-lg bg-jarvis-card/50 border border-jarvis-border hover:border-jarvis-blue/50 hover:bg-jarvis-card text-xs transition-all flex items-center gap-2">
+              <svg class="w-4 h-4 text-jarvis-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Limpiar vista
+            </button>
+            <button onclick="logout()" class="w-full text-left px-3 py-2.5 rounded-lg bg-jarvis-card/50 border border-jarvis-border hover:border-jarvis-danger/50 hover:bg-jarvis-card text-xs transition-all flex items-center gap-2 text-jarvis-danger">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+              </svg>
+              Cerrar sesión
+            </button>
+          </div>
+        </section>
+      </div>
+
+      <!-- Sidebar footer -->
+      <div class="px-4 py-3 border-t border-jarvis-border text-[10px] text-jarvis-muted text-center">
+        Creado por Ricardo Torres
+      </div>
+    </aside>
+
+    <!-- Overlay for mobile sidebar -->
+    <div id="sidebar-overlay" onclick="toggleSidebar()" class="hidden fixed inset-0 bg-black/50 z-20 md:hidden"></div>
+  </div>
+
+  <!-- ==================== LOGIN SCREEN ==================== -->
+  <div id="login-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-jarvis-bg px-4">
+    <div class="w-full max-w-sm">
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-jarvis-blue to-jarvis-cyan flex items-center justify-center shadow-glow mb-4">
+          <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </div>
+        <h1 class="text-xl font-semibold tracking-wide">JARVIS VORTEX</h1>
+        <p class="text-sm text-jarvis-muted mt-1">MultSoftCreations · Acceso seguro</p>
+      </div>
+
+      <div class="bg-jarvis-panel border border-jarvis-border rounded-2xl p-6 space-y-4 shadow-glow-sm">
+        <p class="text-sm text-jarvis-muted text-center">Inicia sesión para continuar</p>
+        <button type="button" id="btn-google" onclick="loginWithGoogle()"
+          class="w-full py-3 rounded-xl bg-white hover:bg-gray-100 text-gray-800 text-sm font-medium transition-all active:scale-[0.98] flex items-center justify-center gap-3">
+          <svg class="w-5 h-5" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+          </svg>
+          Continuar con Google
+        </button>
+        <p id="login-error" class="hidden text-sm text-jarvis-danger text-center"></p>
+      </div>
+      <p class="text-center text-[10px] text-jarvis-muted mt-6">Creado por Ricardo Torres</p>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDSgwtLS1T11bXXqJerh5deQMmdlLuUUBE",
+      authDomain: "jarvis-vortex-78100.firebaseapp.com",
+      projectId: "jarvis-vortex-78100",
+      storageBucket: "jarvis-vortex-78100.firebasestorage.app",
+      messagingSenderId: "81092124762",
+      appId: "1:81092124762:web:1ba24d852f7befc533f863",
+      measurementId: "G-XVV6ETVPCP"
+    };
+
+    const fbApp = initializeApp(firebaseConfig);
+    const auth = getAuth(fbApp);
+    const provider = new GoogleAuthProvider();
+
+    window._firebaseAuth = auth;
+    window._googleProvider = provider;
+    window._signInWithPopup = signInWithPopup;
+    window._firebaseSignOut = signOut;
+
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const token = await user.getIdToken();
+          authToken = token;
+          username = user.email || "";
+          displayName = user.displayName || user.email || "";
+          localStorage.setItem("jarvis_token", token);
+          localStorage.setItem("jarvis_username", username);
+          localStorage.setItem("jarvis_display", displayName);
+          showApp();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    });
+  </script>
+
+  <script>
+    // ============================================================
+    // CONFIG
+    // ============================================================
+    // En GitHub Pages: pon la URL del backend en static/config.js
+    // o: localStorage.setItem('jarvis_api_url', 'https://xxx.hf.space')
+    const API_BASE = window.JARVIS_API_URL || localStorage.getItem('jarvis_api_url') || window.location.origin;
+    let conversationId = null;
+    let authToken = localStorage.getItem('jarvis_token') || null;
+    let username = localStorage.getItem('jarvis_username') || '';
+    let displayName = localStorage.getItem('jarvis_display') || '';
+    let voiceEnabled = localStorage.getItem('jarvis_voice') !== 'false';
+    let isSending = false;
+    let currentUtterance = null;
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      updateVoiceIcon();
+      if (window.innerWidth >= 768) {
+        document.getElementById('sidebar').classList.add('open');
+      }
+      // Firebase onAuthStateChanged se encarga del auto-login
+    });
+
+    function showApp() {
+      document.getElementById('login-screen').classList.add('hidden');
+      document.getElementById('sys-user').textContent = displayName || username;
+    }
+
+    function logout(reload = true) {
+      authToken = null;
+      localStorage.removeItem('jarvis_token');
+      localStorage.removeItem('jarvis_username');
+      localStorage.removeItem('jarvis_display');
+      if (window._firebaseAuth && window._firebaseSignOut) {
+        window._firebaseSignOut(window._firebaseAuth).catch(() => {});
+      }
+      if (reload) location.reload();
+      else document.getElementById('login-screen').classList.remove('hidden');
+    }
+
+    async function loginWithGoogle() {
+      const errEl = document.getElementById('login-error');
+      const btn = document.getElementById('btn-google');
+      errEl.classList.add('hidden');
+      btn.disabled = true;
+      try {
+        if (!window._signInWithPopup) throw new Error('Firebase aún cargando, espera un segundo');
+        const result = await window._signInWithPopup(window._firebaseAuth, window._googleProvider);
+        const token = await result.user.getIdToken();
+        authToken = token;
+        username = result.user.email || '';
+        displayName = result.user.displayName || username;
+        localStorage.setItem('jarvis_token', token);
+        localStorage.setItem('jarvis_username', username);
+        localStorage.setItem('jarvis_display', displayName);
+        showApp();
+      } catch (err) {
+        errEl.textContent = err.message || 'Error al iniciar con Google';
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ============================================================
+    // SIDEBAR
+    // ============================================================
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('hidden', !sidebar.classList.contains('open'));
+    }
+
+    // ============================================================
+    // VOICE (Web Speech API)
+    // ============================================================
+    function toggleVoice() {
+      voiceEnabled = !voiceEnabled;
+      localStorage.setItem('jarvis_voice', voiceEnabled);
+      updateVoiceIcon();
+      if (!voiceEnabled && currentUtterance) {
+        speechSynthesis.cancel();
+      }
+    }
+
+    function updateVoiceIcon() {
+      document.getElementById('icon-voice-on').classList.toggle('hidden', !voiceEnabled);
+      document.getElementById('icon-voice-off').classList.toggle('hidden', voiceEnabled);
+    }
+
+    function speak(text) {
+      if (!voiceEnabled || !window.speechSynthesis) return;
+
+      speechSynthesis.cancel();
+
+      // Clean markdown-ish for speech
+      const clean = text
+        .replace(/[*_`#]+/g, '')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/\n+/g, '. ')
+        .trim();
+
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.lang = 'es-MX';
+      utter.rate = 1.05;
+      utter.pitch = 1.0;
+
+      // Try to pick a good Spanish voice
+      const voices = speechSynthesis.getVoices();
+      const esVoice = voices.find(v => v.lang.startsWith('es') && v.name.includes('Male'))
+        || voices.find(v => v.lang.startsWith('es'))
+        || null;
+      if (esVoice) utter.voice = esVoice;
+
+      currentUtterance = utter;
+      speechSynthesis.speak(utter);
+    }
+
+    // Load voices (some browsers need this)
+    if (window.speechSynthesis) {
+      speechSynthesis.getVoices();
+      speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+    }
+
+    // ============================================================
+    // REACTOR STATUS UI
+    // ============================================================
+    function setReactorStatus(num, status) {
+      // status: 'online' | 'degraded' | 'offline' | 'emergency' | 'standby'
+      const card = document.getElementById(`reactor-${num}`);
+      if (!card) return;
+      const dot = card.querySelector('.reactor-dot');
+      const label = card.querySelector('.reactor-status');
+
+      // Reset
+      dot.className = 'reactor-dot w-3 h-3 rounded-full flex-shrink-0';
+      card.classList.remove('opacity-60');
+
+      const map = {
+        online:    { color: 'bg-jarvis-success', glow: 'reactor-online', text: 'ONLINE',    textColor: 'text-jarvis-success' },
+        degraded:  { color: 'bg-jarvis-warning', glow: 'reactor-degraded', text: 'DEGRADED', textColor: 'text-jarvis-warning' },
+        offline:   { color: 'bg-jarvis-danger',  glow: 'reactor-offline',  text: 'OFFLINE',  textColor: 'text-jarvis-danger' },
+        emergency: { color: 'bg-jarvis-danger',  glow: 'reactor-emergency', text: 'EMERGENCY', textColor: 'text-jarvis-danger' },
+        standby:   { color: 'bg-jarvis-muted',   glow: '',                text: 'STANDBY',  textColor: 'text-jarvis-muted' },
+      };
+
+      const s = map[status] || map.standby;
+      // Solo añadir clases que no estén vacías (evita error DOMTokenList)
+      const classes = [s.color, s.glow].filter(c => c && String(c).trim());
+      if (classes.length) dot.classList.add(...classes);
+      label.textContent = s.text;
+      label.className = `reactor-status text-[10px] font-mono ${s.textColor}`;
+
+      if (status === 'standby') card.classList.add('opacity-60');
+      else card.classList.remove('opacity-60');
+
+      if (status === 'emergency') {
+        document.getElementById('emergency-banner').classList.remove('hidden');
+      }
+    }
+
+    function updateReactorsFromResponse(reactorName) {
+      // reactorName examples: "REACTOR 1", "REACTOR 2", "REACTOR 3", "NINGUNO"
+      const n = (reactorName || '').toUpperCase();
+
+      if (n.includes('1')) {
+        setReactorStatus(1, 'online');
+        setReactorStatus(2, 'standby');
+        setReactorStatus(3, 'standby');
+        document.getElementById('emergency-banner').classList.add('hidden');
+      } else if (n.includes('2')) {
+        setReactorStatus(1, 'offline');
+        setReactorStatus(2, 'online');
+        setReactorStatus(3, 'standby');
+        document.getElementById('emergency-banner').classList.add('hidden');
+      } else if (n.includes('3')) {
+        setReactorStatus(1, 'offline');
+        setReactorStatus(2, 'offline');
+        setReactorStatus(3, 'emergency');
+        document.getElementById('emergency-banner').classList.remove('hidden');
+      } else {
+        setReactorStatus(1, 'offline');
+        setReactorStatus(2, 'offline');
+        setReactorStatus(3, 'offline');
+        document.getElementById('emergency-banner').classList.remove('hidden');
+        document.getElementById('emergency-banner').textContent = '⚠ Todos los reactores fallaron. Sin respuesta de IA.';
+      }
+    }
+
+    // ============================================================
+    // CHAT UI
+    // ============================================================
+    function addMessage(role, content, { typing = false } = {}) {
+      const container = document.getElementById('messages');
+      const isUser = role === 'user';
+
+      const wrapper = document.createElement('div');
+      wrapper.className = `msg-enter flex gap-3 max-w-3xl mx-auto ${isUser ? 'flex-row-reverse' : ''}`;
+
+      const avatar = document.createElement('div');
+      avatar.className = `w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold text-white ${
+        isUser ? 'bg-jarvis-card border border-jarvis-border' : 'bg-gradient-to-br from-jarvis-blue to-jarvis-cyan'
+      }`;
+      avatar.textContent = isUser ? 'R' : 'J';
+
+      const bubble = document.createElement('div');
+      bubble.className = `rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-[85%] ${
+        isUser
+          ? 'bg-jarvis-blue/20 border border-jarvis-blue/30 rounded-tr-sm'
+          : 'bg-jarvis-card/60 border border-jarvis-border rounded-tl-sm'
+      }`;
+
+      if (typing) {
+        bubble.classList.add('typing-cursor');
+        bubble.dataset.fulltext = content;
+        bubble.textContent = '';
+      } else {
+        bubble.innerHTML = formatText(content);
+      }
+
+      wrapper.appendChild(avatar);
+      wrapper.appendChild(bubble);
+      container.appendChild(wrapper);
+      container.scrollTop = container.scrollHeight;
+
+      return bubble;
+    }
+
+    function formatText(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong class="text-jarvis-blue-glow">$1</strong>')
+        .replace(/\n/g, '<br>');
+    }
+
+    async function typewriter(bubble, text, onComplete) {
+      const chars = text.split('');
+      let i = 0;
+      const speed = 12; // ms per char — ajustable
+
+      // Start speaking roughly when typing starts (simultaneous feel)
+      speak(text);
+
+      function tick() {
+        if (i < chars.length) {
+          // Add in small chunks for smoother feel
+          const chunk = chars.slice(i, i + 2).join('');
+          bubble.textContent += chunk;
+          i += 2;
+          const container = document.getElementById('messages');
+          container.scrollTop = container.scrollHeight;
+          setTimeout(tick, speed);
+        } else {
+          bubble.classList.remove('typing-cursor');
+          bubble.innerHTML = formatText(text);
+          if (onComplete) onComplete();
+        }
+      }
+      tick();
+    }
+
+    // ============================================================
+    // SEND MESSAGE
+    // ============================================================
+    async function sendMessage(e) {
+      e.preventDefault();
+      if (isSending) return;
+
+      const input = document.getElementById('input');
+      const text = input.value.trim();
+      if (!text) return;
+
+      isSending = true;
+      document.getElementById('btn-send').disabled = true;
+      input.value = '';
+      autoResize(input);
+
+      addMessage('user', text);
+
+      // Loading indicator
+      const loadingBubble = addMessage('assistant', 'Procesando...', { typing: false });
+      loadingBubble.innerHTML = '<span class="text-jarvis-muted">Procesando<span class="animate-pulse">...</span></span>';
+
+      try {
+        if (!authToken) {
+          logout();
+          return;
+        }
+        const res = await fetch(`${API_BASE}/api/chat/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            message: text,
+            conversation_id: conversationId,
+          }),
+        });
+
+        if (res.status === 401) {
+          logout();
+          return;
+        }
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || `Error ${res.status}`);
+        }
+
+        const data = await res.json();
+        conversationId = data.conversation_id;
+        document.getElementById('sys-conv').textContent = `#${conversationId}`;
+
+        // Update reactors
+        updateReactorsFromResponse(data.reactor);
+
+        // Remove loading, type the real reply
+        loadingBubble.parentElement.remove();
+        const bubble = addMessage('assistant', data.reply, { typing: true });
+        await typewriter(bubble, data.reply);
+
+      } catch (err) {
+        loadingBubble.parentElement.remove();
+        addMessage('assistant', `⚠ Error de comunicación: ${err.message}. Verifique que el backend esté activo y las keys configuradas.`);
+        setReactorStatus(1, 'offline');
+        setReactorStatus(2, 'offline');
+        setReactorStatus(3, 'offline');
+      } finally {
+        isSending = false;
+        document.getElementById('btn-send').disabled = false;
+        input.focus();
+      }
+    }
+
+    function handleKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(e);
+      }
+    }
+
+    function autoResize(el) {
+      el.style.height = 'auto';
+      el.style.height = Math.min(el.scrollHeight, 128) + 'px';
+    }
+
+    function newConversation() {
+      conversationId = null;
+      document.getElementById('sys-conv').textContent = '—';
+      clearChatUI();
+      addMessage('assistant', 'Nueva conversación iniciada, señor. ¿En qué puedo asistirle?');
+    }
+
+    function clearChatUI() {
+      const container = document.getElementById('messages');
+      container.innerHTML = '';
+    }
+  </script>
+</body>
+</html>
