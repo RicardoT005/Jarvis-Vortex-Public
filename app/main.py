@@ -16,6 +16,8 @@ from app.database import init_db, AsyncSessionLocal
 from app.seed import seed_core_data
 from app.routers import chat
 from app.routers import auth
+from app.routers import conversations
+from app.routers import files
 
 settings = get_settings()
 
@@ -52,6 +54,8 @@ app.add_middleware(
 # Routers
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(conversations.router)
+app.include_router(files.router)
 
 # Frontend estático (cuando exista)
 static_dir = os.path.join(os.path.dirname(__file__), "..", "static")

@@ -154,7 +154,25 @@
 
       <!-- Input area -->
       <div class="border-t border-jarvis-border bg-jarvis-panel/90 backdrop-blur-md px-4 py-3 z-20">
+        <div id="file-chip" class="hidden max-w-3xl mx-auto mb-2 text-xs text-jarvis-cyan flex items-center gap-2">
+          <span id="file-chip-name"></span>
+          <button type="button" onclick="clearAttachedFile()" class="text-jarvis-danger">✕</button>
+        </div>
         <form id="chat-form" class="max-w-3xl mx-auto flex gap-2 items-end" onsubmit="sendMessage(event)">
+          <input type="file" id="file-input" accept=".txt,text/plain" class="hidden" onchange="onFileSelected(event)" />
+          <button type="button" onclick="document.getElementById('file-input').click()" title="Adjuntar .txt"
+            class="flex-shrink-0 w-11 h-11 rounded-xl bg-jarvis-card border border-jarvis-border hover:border-jarvis-blue transition-all flex items-center justify-center text-jarvis-muted hover:text-jarvis-blue">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+            </svg>
+          </button>
+          <button type="button" onclick="requestLocation()" title="Compartir ubicación"
+            class="flex-shrink-0 w-11 h-11 rounded-xl bg-jarvis-card border border-jarvis-border hover:border-jarvis-blue transition-all flex items-center justify-center text-jarvis-muted hover:text-jarvis-blue">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </button>
           <div class="flex-1 relative">
             <textarea id="input" rows="1" placeholder="Habla con Jarvis..."
               class="w-full bg-jarvis-card border border-jarvis-border rounded-xl px-4 py-3 pr-12 text-sm text-jarvis-text placeholder-jarvis-muted resize-none focus:outline-none focus:border-jarvis-blue focus:shadow-glow-sm transition-all max-h-32"
@@ -167,7 +185,8 @@
             </svg>
           </button>
         </form>
-        <p class="text-center text-[10px] text-jarvis-muted mt-2 max-w-3xl mx-auto">
+        <p id="loc-status" class="text-center text-[10px] text-jarvis-muted mt-1 max-w-3xl mx-auto"></p>
+        <p class="text-center text-[10px] text-jarvis-muted mt-1 max-w-3xl mx-auto">
           Jarvis Vortex · MultSoftCreations · Memoria persistente activa
         </p>
       </div>
@@ -272,6 +291,14 @@
             <p><span class="text-jarvis-muted">Dueño:</span> Ricardo Torres</p>
             <p><span class="text-jarvis-muted">Marca:</span> MultSoftCreations</p>
             <p><span class="text-jarvis-muted">Versión:</span> 2.0.0</p>
+          </div>
+        </section>
+
+        <!-- Conversaciones guardadas -->
+        <section class="mb-4">
+          <h3 class="text-[11px] font-semibold tracking-wider text-jarvis-muted uppercase mb-3">Conversaciones</h3>
+          <div id="conv-list" class="space-y-1 max-h-40 overflow-y-auto scrollbar-thin text-xs text-jarvis-muted">
+            <p class="px-2">Cargando…</p>
           </div>
         </section>
 
@@ -413,6 +440,7 @@
     function showApp() {
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('sys-user').textContent = displayName || username;
+      loadConversations();
     }
 
     function logout(reload = true) {
@@ -478,38 +506,151 @@
       document.getElementById('icon-voice-off').classList.toggle('hidden', voiceEnabled);
     }
 
+    function pickMaleSpanishVoice() {
+      const voices = speechSynthesis.getVoices() || [];
+      const prefer = [
+        v => /google.*español.*méxico|es-mx.*male|microsoft.*sabina|microsoft.*raul|jorge|diego|pablo|carlos/i.test(v.name + ' ' + v.lang),
+        v => v.lang.toLowerCase().startsWith('es-mx') && /male|hombre|mascul/i.test(v.name),
+        v => v.lang.toLowerCase().startsWith('es') && /male|hombre|mascul|jorge|diego|raul|pablo/i.test(v.name),
+        v => v.lang.toLowerCase().startsWith('es-mx'),
+        v => v.lang.toLowerCase().startsWith('es'),
+      ];
+      for (const fn of prefer) {
+        const hit = voices.find(fn);
+        if (hit) return hit;
+      }
+      return null;
+    }
+
     function speak(text) {
       if (!voiceEnabled || !window.speechSynthesis) return;
-
       speechSynthesis.cancel();
 
-      // Clean markdown-ish for speech
       const clean = text
         .replace(/[*_`#]+/g, '')
         .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
         .replace(/\n+/g, '. ')
+        .replace(/\s{2,}/g, ' ')
         .trim();
+      if (!clean) return;
 
-      const utter = new SpeechSynthesisUtterance(clean);
-      utter.lang = 'es-MX';
-      utter.rate = 1.05;
-      utter.pitch = 1.0;
+      // Frases más naturales: pausas suaves en puntuación
+      const chunks = clean.split(/(?<=[\.\!\?…])\s+/).filter(Boolean);
+      let idx = 0;
 
-      // Try to pick a good Spanish voice
-      const voices = speechSynthesis.getVoices();
-      const esVoice = voices.find(v => v.lang.startsWith('es') && v.name.includes('Male'))
-        || voices.find(v => v.lang.startsWith('es'))
-        || null;
-      if (esVoice) utter.voice = esVoice;
-
-      currentUtterance = utter;
-      speechSynthesis.speak(utter);
+      function speakNext() {
+        if (idx >= chunks.length) return;
+        const utter = new SpeechSynthesisUtterance(chunks[idx++]);
+        utter.lang = 'es-MX';
+        utter.rate = 0.95 + (Math.random() * 0.06);
+        utter.pitch = 0.88 + (Math.random() * 0.08);
+        utter.volume = 1;
+        const v = pickMaleSpanishVoice();
+        if (v) utter.voice = v;
+        utter.onend = () => setTimeout(speakNext, 80 + Math.random() * 120);
+        currentUtterance = utter;
+        speechSynthesis.speak(utter);
+      }
+      speakNext();
     }
 
-    // Load voices (some browsers need this)
     if (window.speechSynthesis) {
       speechSynthesis.getVoices();
       speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+    }
+
+    // ============================================================
+    // UBICACIÓN Y ARCHIVOS
+    // ============================================================
+    let deviceLocation = null;
+    let attachedFile = null;
+
+    function requestLocation() {
+      const el = document.getElementById('loc-status');
+      if (!navigator.geolocation) {
+        el.textContent = 'Este navegador no soporta ubicación.';
+        return;
+      }
+      el.textContent = 'Solicitando ubicación…';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          deviceLocation = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            label: 'ubicación del dispositivo',
+          };
+          el.textContent = `Ubicación activa (${deviceLocation.latitude.toFixed(3)}, ${deviceLocation.longitude.toFixed(3)})`;
+        },
+        (err) => {
+          el.textContent = 'No se pudo obtener ubicación: ' + (err.message || 'permiso denegado');
+        },
+        { enableHighAccuracy: false, timeout: 12000 }
+      );
+    }
+
+    function onFileSelected(e) {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      if (!f.name.toLowerCase().endsWith('.txt')) {
+        alert('Por ahora solo archivos .txt');
+        e.target.value = '';
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        attachedFile = { name: f.name, content: String(reader.result || '') };
+        document.getElementById('file-chip').classList.remove('hidden');
+        document.getElementById('file-chip-name').textContent = '📄 ' + f.name;
+      };
+      reader.readAsText(f);
+    }
+
+    function clearAttachedFile() {
+      attachedFile = null;
+      document.getElementById('file-chip').classList.add('hidden');
+      document.getElementById('file-input').value = '';
+    }
+
+    async function loadConversations() {
+      if (!authToken) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/conversations/`, {
+          headers: { 'Authorization': `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const list = await res.json();
+        const box = document.getElementById('conv-list');
+        if (!box) return;
+        box.innerHTML = '';
+        list.forEach(c => {
+          const btn = document.createElement('button');
+          btn.className = 'w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-jarvis-card text-jarvis-muted hover:text-jarvis-text truncate';
+          btn.textContent = c.title || ('#' + c.id);
+          btn.onclick = () => openConversation(c.id);
+          box.appendChild(btn);
+        });
+      } catch (_) {}
+    }
+
+    async function openConversation(id) {
+      if (!authToken) return;
+      try {
+        const res = await fetch(`${API_BASE}/api/conversations/${id}/messages`, {
+          headers: { 'Authorization': `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const msgs = await res.json();
+        conversationId = id;
+        document.getElementById('sys-conv').textContent = '#' + id;
+        const container = document.getElementById('messages');
+        container.innerHTML = '';
+        msgs.forEach(m => {
+          if (m.role === 'user' || m.role === 'assistant') {
+            addMessage(m.role, m.content, { typing: false });
+          }
+        });
+        container.scrollTop = container.scrollHeight;
+      } catch (_) {}
     }
 
     // ============================================================
@@ -660,18 +801,35 @@
 
       const input = document.getElementById('input');
       const text = input.value.trim();
-      if (!text) return;
+      if (!text && !attachedFile) return;
 
       isSending = true;
       document.getElementById('btn-send').disabled = true;
       input.value = '';
       autoResize(input);
 
-      addMessage('user', text);
+      const displayUser = attachedFile
+        ? (text ? text + '\n📎 ' + attachedFile.name : '📎 ' + attachedFile.name)
+        : text;
+      addMessage('user', displayUser);
 
-      // Loading indicator
       const loadingBubble = addMessage('assistant', 'Procesando...', { typing: false });
       loadingBubble.innerHTML = '<span class="text-jarvis-muted">Procesando<span class="animate-pulse">...</span></span>';
+
+      const payload = {
+        message: text || ('Por favor analiza este archivo: ' + (attachedFile && attachedFile.name)),
+        conversation_id: conversationId,
+      };
+      if (deviceLocation) {
+        payload.latitude = deviceLocation.latitude;
+        payload.longitude = deviceLocation.longitude;
+        payload.location_label = deviceLocation.label;
+      }
+      if (attachedFile) {
+        payload.file_content = attachedFile.content;
+        payload.file_name = attachedFile.name;
+        clearAttachedFile();
+      }
 
       try {
         if (!authToken) {
@@ -684,10 +842,7 @@
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${authToken}`,
           },
-          body: JSON.stringify({
-            message: text,
-            conversation_id: conversationId,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (res.status === 401) {
@@ -702,15 +857,11 @@
         const data = await res.json();
         conversationId = data.conversation_id;
         document.getElementById('sys-conv').textContent = `#${conversationId}`;
-
-        // Update reactors
         updateReactorsFromResponse(data.reactor);
-
-        // Remove loading, type the real reply
         loadingBubble.parentElement.remove();
         const bubble = addMessage('assistant', data.reply, { typing: true });
         await typewriter(bubble, data.reply);
-
+        loadConversations();
       } catch (err) {
         loadingBubble.parentElement.remove();
         addMessage('assistant', `⚠ Error de comunicación: ${err.message}. Verifique que el backend esté activo y las keys configuradas.`);
