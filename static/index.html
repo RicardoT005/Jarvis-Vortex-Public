@@ -522,11 +522,14 @@
       return null;
     }
 
-    function speak(text) {
-      if (!voiceEnabled || !window.speechSynthesis) return;
-      speechSynthesis.cancel();
+    let speaking = false;
 
-      const clean = text
+    function speak(text) {
+      if (!voiceEnabled || !window.speechSynthesis || speaking) return;
+
+      try { speechSynthesis.cancel(); } catch (_) {}
+
+      let clean = String(text || '')
         .replace(/[*_`#]+/g, '')
         .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
         .replace(/\n+/g, '. ')
@@ -534,36 +537,88 @@
         .trim();
       if (!clean) return;
 
-      // Frases más naturales: pausas suaves en puntuación
-      const chunks = clean.split(/(?<=[\.\!\?…])\s+/).filter(Boolean);
-      let idx = 0;
+      // En móviles, textos largos + cola de frases saturan el sistema
+      if (clean.length > 500) clean = clean.slice(0, 500) + '.';
 
-      function speakNext() {
-        if (idx >= chunks.length) return;
-        const utter = new SpeechSynthesisUtterance(chunks[idx++]);
-        utter.lang = 'es-MX';
-        utter.rate = 0.95 + (Math.random() * 0.06);
-        utter.pitch = 0.88 + (Math.random() * 0.08);
-        utter.volume = 1;
-        const v = pickMaleSpanishVoice();
-        if (v) utter.voice = v;
-        utter.onend = () => setTimeout(speakNext, 80 + Math.random() * 120);
-        currentUtterance = utter;
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.lang = 'es-MX';
+      utter.rate = 0.95;
+      utter.pitch = 0.9;
+      utter.volume = 1;
+      const v = pickMaleSpanishVoice();
+      if (v) utter.voice = v;
+
+      speaking = true;
+      utter.onend = () => { speaking = false; currentUtterance = null; };
+      utter.onerror = () => { speaking = false; currentUtterance = null; };
+      currentUtterance = utter;
+      try {
         speechSynthesis.speak(utter);
+      } catch (_) {
+        speaking = false;
       }
-      speakNext();
     }
 
     if (window.speechSynthesis) {
-      speechSynthesis.getVoices();
-      speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+      try { speechSynthesis.getVoices(); } catch (_) {}
+      // Solo una vez; no reasignar en bucle
+      speechSynthesis.onvoiceschanged = function onceVoices() {
+        try { speechSynthesis.getVoices(); } catch (_) {}
+        speechSynthesis.onvoiceschanged = null;
+      };
     }
 
     // ============================================================
-    // UBICACIÓN Y ARCHIVOS
+    // UBICACIÓN, ARCHIVOS Y RED
     // ============================================================
     let deviceLocation = null;
     let attachedFile = null;
+    let networkInfo = { type: 'unknown', quality: 'unknown' };
+    let lowBandwidth = false;
+
+    function detectNetwork() {
+      try {
+        const c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (c) {
+          const t = String(c.effectiveType || c.type || 'unknown').toLowerCase();
+          networkInfo = {
+            type: t,
+            downlink: c.downlink,
+            rtt: c.rtt,
+            save_data: !!c.saveData,
+          };
+          lowBandwidth = !!c.saveData || t === '2g' || t === 'slow-2g' ||
+            (c.rtt && c.rtt > 800) || (c.downlink != null && c.downlink < 0.5);
+          networkInfo.quality = lowBandwidth ? 'baja'
+            : (t === '3g' || (c.downlink != null && c.downlink < 1.5) ? 'media' : 'buena');
+        }
+      } catch (_) {}
+      return networkInfo;
+    }
+
+    async function measureBandwidthLight() {
+      detectNetwork();
+      try {
+        const t0 = performance.now();
+        const res = await fetch(API_BASE + '/health?_=' + Date.now(), { cache: 'no-store' });
+        await res.arrayBuffer();
+        const ms = performance.now() - t0;
+        const kbps = ms > 0 ? (2 * 8 * 1000) / ms : 0;
+        networkInfo.measured_kbps = Math.round(kbps);
+        networkInfo.rtt = Math.round(ms);
+        if (ms > 1200 || kbps < 100) {
+          lowBandwidth = true;
+          networkInfo.quality = 'baja';
+        }
+      } catch (_) {
+        lowBandwidth = true;
+        networkInfo.quality = 'baja';
+      }
+      return networkInfo;
+    }
+
+    detectNetwork();
+    setTimeout(function () { measureBandwidthLight().catch(function () {}); }, 2000);
 
     function requestLocation() {
       const el = document.getElementById('loc-status');
@@ -767,21 +822,30 @@
     }
 
     async function typewriter(bubble, text, onComplete) {
+      // En móvil: mostrar de golpe (el efecto letra a letra satura CPU/red)
+      const isMobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '');
+      speak(text);
+
+      if (isMobile || (text && text.length > 800)) {
+        bubble.classList.remove('typing-cursor');
+        bubble.innerHTML = formatText(text);
+        const container = document.getElementById('messages');
+        if (container) container.scrollTop = container.scrollHeight;
+        if (onComplete) onComplete();
+        return;
+      }
+
       const chars = text.split('');
       let i = 0;
-      const speed = 12; // ms per char — ajustable
-
-      // Start speaking roughly when typing starts (simultaneous feel)
-      speak(text);
+      const speed = 18;
+      const step = 4;
 
       function tick() {
         if (i < chars.length) {
-          // Add in small chunks for smoother feel
-          const chunk = chars.slice(i, i + 2).join('');
-          bubble.textContent += chunk;
-          i += 2;
+          bubble.textContent += chars.slice(i, i + step).join('');
+          i += step;
           const container = document.getElementById('messages');
-          container.scrollTop = container.scrollHeight;
+          if (container) container.scrollTop = container.scrollHeight;
           setTimeout(tick, speed);
         } else {
           bubble.classList.remove('typing-cursor');
@@ -816,9 +880,12 @@
       const loadingBubble = addMessage('assistant', 'Procesando...', { typing: false });
       loadingBubble.innerHTML = '<span class="text-jarvis-muted">Procesando<span class="animate-pulse">...</span></span>';
 
+      detectNetwork();
       const payload = {
         message: text || ('Por favor analiza este archivo: ' + (attachedFile && attachedFile.name)),
         conversation_id: conversationId,
+        network: networkInfo,
+        low_bandwidth: lowBandwidth,
       };
       if (deviceLocation) {
         payload.latitude = deviceLocation.latitude;
@@ -826,7 +893,9 @@
         payload.location_label = deviceLocation.label;
       }
       if (attachedFile) {
-        payload.file_content = attachedFile.content;
+        // En red lenta, menos texto del archivo
+        const maxChars = lowBandwidth ? 6000 : 30000;
+        payload.file_content = String(attachedFile.content || '').slice(0, maxChars);
         payload.file_name = attachedFile.name;
         clearAttachedFile();
       }
@@ -861,7 +930,11 @@
         loadingBubble.parentElement.remove();
         const bubble = addMessage('assistant', data.reply, { typing: true });
         await typewriter(bubble, data.reply);
-        loadConversations();
+        // Actualizar lista de chats solo de vez en cuando (menos red)
+        if (!window._lastConvLoad || Date.now() - window._lastConvLoad > 30000) {
+          window._lastConvLoad = Date.now();
+          loadConversations();
+        }
       } catch (err) {
         loadingBubble.parentElement.remove();
         addMessage('assistant', `⚠ Error de comunicación: ${err.message}. Verifique que el backend esté activo y las keys configuradas.`);
