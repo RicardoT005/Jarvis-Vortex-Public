@@ -139,3 +139,18 @@ REGLAS:
 6. Responde en el idioma del usuario.
 7. Sé breve si la red es lenta.
 """
+
+
+FACT_EXTRACTION_PROMPT = """
+Analiza la siguiente conversación entre el usuario y Jarvis.
+Extrae SOLO hechos importantes, preferencias, decisiones o información que merezca recordarse a largo plazo.
+
+Reglas:
+- Devuelve un JSON con lista de objetos: {{"category": "...", "content": "...", "importance": 0.0-1.0}}
+- category: preference | fact | event | relationship | identity
+- No inventes. Si no hay hechos claros, devuelve []
+- importance alta (0.8+) solo para datos muy relevantes y estables.
+
+Conversación:
+{conversation}
+"""
