@@ -877,8 +877,8 @@
         : text;
       addMessage('user', displayUser);
 
-      const loadingBubble = addMessage('assistant', 'Procesando...', { typing: false });
-      loadingBubble.innerHTML = '<span class="text-jarvis-muted">Procesando<span class="animate-pulse">...</span></span>';
+      const loadingBubble = addMessage('assistant', 'Trabajando...', { typing: false });
+      loadingBubble.innerHTML = '<span class="text-jarvis-muted">Trabajando<span class="animate-pulse">...</span></span>';
 
       detectNetwork();
       const payload = {
@@ -927,6 +927,15 @@
         conversationId = data.conversation_id;
         document.getElementById('sys-conv').textContent = `#${conversationId}`;
         updateReactorsFromResponse(data.reactor);
+
+        // Fase 1: anuncio (detrás se midió red/clima/hora)
+        if (data.status) {
+          loadingBubble.classList.remove('typing-cursor');
+          loadingBubble.innerHTML = formatText(data.status);
+          await new Promise(r => setTimeout(r, 450));
+        }
+
+        // Fase 2: resumen natural final
         loadingBubble.parentElement.remove();
         const bubble = addMessage('assistant', data.reply, { typing: true });
         await typewriter(bubble, data.reply);

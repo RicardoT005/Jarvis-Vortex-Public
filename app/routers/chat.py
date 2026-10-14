@@ -1,4 +1,4 @@
-"""Endpoint principal de chat con memoria, clima, etiquetas y modo ahorro."""
+"""Chat con herramientas en segundo plano y respuesta natural en dos fases."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from app.memory.extraction import FactExtractor
 from app.memory.retrieval import MemoryRetriever
 from app.memory.store import MemoryStore
 from app.models import Conversation, User
-from app.tools.functions import expand_tags, format_network
+from app.tools.functions import expand_tags, format_network, _hora, _fecha
 from app.tools.weather import get_weather_for_coords, get_weather_for_place
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -32,7 +32,6 @@ class ChatRequest(BaseModel):
     location_label: str | None = None
     file_content: str | None = None
     file_name: str | None = None
-    # Diagnóstico de red del cliente
     network: Optional[dict[str, Any]] = None
     low_bandwidth: bool = False
 
@@ -43,40 +42,29 @@ class ChatResponse(BaseModel):
     reactor: str
     extracted_facts: list[dict] = []
     tool_notes: list[str] = []
+    status: str | None = None
 
 
 WEATHER_PATTERNS = [
-    r"\bclima\b",
-    r"\btiempo\b",
-    r"\btemperatura\b",
-    r"\bllueve\b",
-    r"\blluvia\b",
-    r"\bpron[oó]stico\b",
-    r"\bweather\b",
+    r"\bclima\b", r"\btiempo\b", r"\btemperatura\b",
+    r"\bllueve\b", r"\blluvia\b", r"\bpron[oó]stico\b", r"\bweather\b",
 ]
 
-NETWORK_PATTERNS = [
-    r"\bred\b",
-    r"\bwi-?fi\b",
-    r"\binternet\b",
-    r"\bconexi[oó]n\b",
-    r"\bvelocidad\b",
-    r"\bancho de banda\b",
-    r"\bdiagn[oó]stico\b",
-    r"\blatencia\b",
-    r"\bping\b",
-    r"\bdatos m[oó]viles\b",
+NETWORK_DIAG_PATTERNS = [
+    r"diagn[oó]stico\s+(de\s+)?(mi\s+)?(red|conexi[oó]n|internet|wifi|wi-?fi)",
+    r"(revisa|revisar|analiza|analizar|mide|medir|checa|checar|prueba|probar)\s+(mi\s+)?(red|conexi[oó]n|internet|velocidad|wifi|wi-?fi|latencia)",
+    r"(c[oó]mo\s+est[aá]|estado\s+de)\s+(mi\s+)?(red|conexi[oó]n|internet|wifi)",
+    r"test\s+de\s+(velocidad|red)",
+    r"speed\s*test",
+    r"haz\s+un\s+diagn[oó]stico",
 ]
 
+TIME_PATTERNS = [r"\bhora\b", r"\bqu[eé]\s+hora\b", r"\bfecha\b", r"\bd[ií]a\s+es\s+hoy\b"]
 
-def _wants_weather(text: str) -> bool:
+
+def _match_any(text: str, patterns: list[str]) -> bool:
     t = text.lower()
-    return any(re.search(p, t) for p in WEATHER_PATTERNS)
-
-
-def _wants_network(text: str) -> bool:
-    t = text.lower()
-    return any(re.search(p, t) for p in NETWORK_PATTERNS)
+    return any(re.search(p, t) for p in patterns)
 
 
 def _extract_place(text: str) -> str | None:
@@ -93,6 +81,56 @@ def _extract_place(text: str) -> str | None:
     return None
 
 
+async def _run_tools(request: ChatRequest) -> tuple[str, list[str], str | None]:
+    notes: list[str] = []
+    blocks: list[str] = []
+    status_parts: list[str] = []
+    msg = request.message
+
+    if _match_any(msg, TIME_PATTERNS):
+        blocks.append(f"HORA_REAL={_hora()} | FECHA_REAL={_fecha()}")
+        notes.append("hora/fecha")
+        status_parts.append("consultando la hora")
+
+    if _match_any(msg, NETWORK_DIAG_PATTERNS):
+        net_txt = format_network(request.network)
+        blocks.append(f"DATOS_DE_RED_DEL_DISPOSITIVO: {net_txt}")
+        notes.append("red")
+        status_parts.append("midiendo la conexión")
+
+    if _match_any(msg, WEATHER_PATTERNS):
+        try:
+            place = _extract_place(msg)
+            if place:
+                w = await get_weather_for_place(place)
+                blocks.append(f"CLIMA_REAL ({place}):\n{w}")
+                notes.append(f"clima:{place}")
+                status_parts.append(f"consultando el clima en {place}")
+            elif request.latitude is not None and request.longitude is not None:
+                label = request.location_label or "su ubicación"
+                w = await get_weather_for_coords(request.latitude, request.longitude, label)
+                blocks.append(f"CLIMA_REAL ({label}):\n{w}")
+                notes.append("clima:ubicacion")
+                status_parts.append("consultando el clima de su ubicación")
+            else:
+                w = await get_weather_for_place("Veracruz, Mexico")
+                blocks.append(f"CLIMA_REAL (Veracruz, México):\n{w}")
+                notes.append("clima:veracruz")
+                status_parts.append("consultando el clima")
+        except Exception as e:
+            blocks.append(f"CLIMA_ERROR: {e}")
+            notes.append("clima_error")
+
+    if request.network and "red" not in notes:
+        blocks.append(f"CONTEXTO_RED_OPCIONAL: {format_network(request.network)}")
+
+    status = None
+    if status_parts:
+        status = "Voy a " + ", ".join(status_parts) + ", señor."
+
+    return ("\n\n".join(blocks), notes, status)
+
+
 @router.post("/", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -103,16 +141,14 @@ async def chat(
     user_message = request.message.strip()
     low_bw = bool(request.low_bandwidth)
 
-    # Archivo: en red lenta, menos caracteres
     if request.file_content and request.file_name:
         limit = 8000 if low_bw else 30000
         snippet = request.file_content[:limit]
         user_message = (
-            f"{user_message}\n\n"
-            f"[Archivo adjunto: {request.file_name}]\n"
-            f"--- INICIO DEL ARCHIVO ---\n{snippet}\n--- FIN DEL ARCHIVO ---"
+            f"{user_message}\n\n[Archivo: {request.file_name}]\n"
+            f"---\n{snippet}\n---"
         )
-        tool_notes.append(f"Leí el archivo {request.file_name}.")
+        tool_notes.append(f"archivo:{request.file_name}")
 
     if request.conversation_id:
         result = await db.execute(
@@ -125,8 +161,10 @@ async def chat(
         if not conversation:
             raise HTTPException(status_code=404, detail="Conversación no encontrada")
     else:
-        title_src = request.message.strip()[:60] or "Nueva conversación"
-        conversation = Conversation(user_id=user.id, title=title_src)
+        conversation = Conversation(
+            user_id=user.id,
+            title=(request.message.strip()[:60] or "Nueva conversación"),
+        )
         db.add(conversation)
         await db.flush()
 
@@ -136,35 +174,12 @@ async def chat(
 
     await store.add_message(conversation.id, "user", user_message)
 
-    # Clima solo si lo piden (evita llamadas extra)
-    weather_block = ""
-    if _wants_weather(request.message):
-        try:
-            place = _extract_place(request.message)
-            if place:
-                weather_block = await get_weather_for_place(place)
-                tool_notes.append(f"Consulté el clima de {place}.")
-            elif request.latitude is not None and request.longitude is not None:
-                label = request.location_label or "su ubicación actual"
-                weather_block = await get_weather_for_coords(
-                    request.latitude, request.longitude, label
-                )
-                tool_notes.append("Consulté el clima de su ubicación.")
-            else:
-                weather_block = await get_weather_for_place("Veracruz, Mexico")
-                tool_notes.append("Consulté el clima de Veracruz, México.")
-        except Exception as e:
-            weather_block = f"No pude obtener el clima ({e})."
-            tool_notes.append("Falló el clima.")
+    tool_block, notes, status = await _run_tools(request)
+    tool_notes.extend(notes)
 
     context = await retriever.build_context(user.id, conversation.id)
-
-    # Historial más corto en red lenta
     recent = context["recent_messages"]
-    if low_bw:
-        recent = recent[-8:]
-    else:
-        recent = recent[-14:]
+    recent = recent[-8:] if low_bw else recent[-14:]
 
     location_hint = None
     if request.latitude is not None and request.longitude is not None:
@@ -182,49 +197,40 @@ async def chat(
         long_term_memories=context["long_term_memories"],
         recent_summaries=context["recent_summaries"],
         profile_facts=context["profile_facts"],
-        weather_data=weather_block or None,
+        weather_data=None,
         location_hint=location_hint,
         network_info=request.network,
         low_bandwidth=low_bw,
     )
+
+    mask_instructions = """
+MODO MÁSCARA (interno, el usuario no ve esto):
+- Abajo hay DATOS YA MEDIDOS por el sistema. Son reales.
+- Tú NO mides nada: ya está hecho. Tú solo INTERPRETAS y RESUMES.
+- Responde en lenguaje natural como Jarvis. SIN etiquetas [hora] [red] [clima].
+- No digas "no tengo acceso" si hay datos abajo.
+- Sé concreto: lo importante primero. Sin guías largas de ping/Windows salvo que las pidan.
+- Si hay red: di si está lenta o aceptable y por qué (tipo 3G/4G, Mb/s, latencia).
+- Si hay clima: resume temperatura y condición.
+- Si hay hora/fecha: dilas con naturalidad.
+"""
+
+    if tool_block:
+        system_prompt = (
+            system_prompt + "\n\n" + mask_instructions
+            + "\n\nDATOS INTERNOS YA OBTENIDOS:\n" + tool_block
+        )
 
     messages = [{"role": "system", "content": system_prompt}]
     messages.extend(recent)
     if not messages or messages[-1].get("content") != user_message:
         messages.append({"role": "user", "content": user_message})
 
-    max_tokens = 600 if low_bw else 1200
-    # Si piden diagnóstico de red, no dejamos que el modelo diga "no puedo"
-    if _wants_network(request.message):
-        net_txt = format_network(request.network)
-        if request.network:
-            reply = (
-                "Voy a revisar el estado de su conexión con los datos del dispositivo, señor.\n\n"
-                f"Diagnóstico de red: {net_txt}.\n\n"
-                "Esto es una estimación del navegador (tipo de red, latencia y velocidad aproximada), "
-                "no un speedtest completo del proveedor. "
-                "Si la calidad aparece como baja, conviene usar menos pestañas o cambiar a una red más estable."
-            )
-            tool_notes.append("Diagnóstico de red forzado con datos del cliente.")
-        else:
-            reply = (
-                "Intenté leer el estado de su red, pero el navegador no envió datos de conexión. "
-                "Pruebe recargar la página o usar un navegador que reporte el tipo de red (Chrome suele hacerlo)."
-            )
-            tool_notes.append("Diagnóstico de red sin datos del cliente.")
-    else:
-        reply = await ai.chat(messages, max_tokens=max_tokens)
-        if not reply:
-            reply = "Lo siento. Los reactores no responden en este momento."
+    max_tokens = 500 if low_bw else 900
+    reply = await ai.chat(messages, max_tokens=max_tokens)
+    if not reply:
+        reply = "Lo siento, señor. No pude completar el análisis en este momento."
 
-        # Si el modelo habló de hora sin etiqueta, forzamos dato real al final no hace falta;
-        # expandimos etiquetas siempre.
-        # Si preguntó la hora y no usó [hora], reescribimos respuesta corta.
-        if re.search(r"\bhora\b|\bqu[eé]\s+hora\b", request.message, re.IGNORECASE):
-            if "[hora]" not in reply.lower() and not re.search(r"\d{1,2}:\d{2}", reply):
-                reply = "Son las [hora], señor."
-
-    # Expandir etiquetas [hora], [fecha], [clima:..], [red], etc.
     reply = await expand_tags(
         reply,
         user_display_name=user.display_name or "",
@@ -233,12 +239,10 @@ async def chat(
         longitude=request.longitude,
         location_label=request.location_label,
     )
-    tool_notes.append("Etiquetas de función aplicadas.")
 
     await store.add_message(conversation.id, "assistant", reply)
 
     extracted = []
-    # En red lenta no gastamos otra llamada al modelo extrayendo hechos
     if not low_bw:
         try:
             recent_txt = recent[-4:]
@@ -247,7 +251,7 @@ async def chat(
             extractor = FactExtractor(db, ai)
             extracted = await extractor.extract_and_store(user.id, conv_text)
         except Exception as e:
-            print(f"[chat] Error en extracción: {e}")
+            print(f"[chat] extracción: {e}")
 
     await db.commit()
 
@@ -257,4 +261,5 @@ async def chat(
         reactor=ai.last_reactor,
         extracted_facts=extracted,
         tool_notes=tool_notes,
+        status=status,
     )
