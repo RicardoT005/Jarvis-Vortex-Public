@@ -18,7 +18,7 @@ from app.memory.extraction import FactExtractor
 from app.memory.retrieval import MemoryRetriever
 from app.memory.store import MemoryStore
 from app.models import Conversation, User
-from app.tools.functions import expand_tags
+from app.tools.functions import expand_tags, format_network
 from app.tools.weather import get_weather_for_coords, get_weather_for_place
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -55,10 +55,28 @@ WEATHER_PATTERNS = [
     r"\bweather\b",
 ]
 
+NETWORK_PATTERNS = [
+    r"\bred\b",
+    r"\bwi-?fi\b",
+    r"\binternet\b",
+    r"\bconexi[oó]n\b",
+    r"\bvelocidad\b",
+    r"\bancho de banda\b",
+    r"\bdiagn[oó]stico\b",
+    r"\blatencia\b",
+    r"\bping\b",
+    r"\bdatos m[oó]viles\b",
+]
+
 
 def _wants_weather(text: str) -> bool:
     t = text.lower()
     return any(re.search(p, t) for p in WEATHER_PATTERNS)
+
+
+def _wants_network(text: str) -> bool:
+    t = text.lower()
+    return any(re.search(p, t) for p in NETWORK_PATTERNS)
 
 
 def _extract_place(text: str) -> str | None:
@@ -176,9 +194,35 @@ async def chat(
         messages.append({"role": "user", "content": user_message})
 
     max_tokens = 600 if low_bw else 1200
-    reply = await ai.chat(messages, max_tokens=max_tokens)
-    if not reply:
-        reply = "Lo siento. Los reactores no responden en este momento."
+    # Si piden diagnóstico de red, no dejamos que el modelo diga "no puedo"
+    if _wants_network(request.message):
+        net_txt = format_network(request.network)
+        if request.network:
+            reply = (
+                "Voy a revisar el estado de su conexión con los datos del dispositivo, señor.\n\n"
+                f"Diagnóstico de red: {net_txt}.\n\n"
+                "Esto es una estimación del navegador (tipo de red, latencia y velocidad aproximada), "
+                "no un speedtest completo del proveedor. "
+                "Si la calidad aparece como baja, conviene usar menos pestañas o cambiar a una red más estable."
+            )
+            tool_notes.append("Diagnóstico de red forzado con datos del cliente.")
+        else:
+            reply = (
+                "Intenté leer el estado de su red, pero el navegador no envió datos de conexión. "
+                "Pruebe recargar la página o usar un navegador que reporte el tipo de red (Chrome suele hacerlo)."
+            )
+            tool_notes.append("Diagnóstico de red sin datos del cliente.")
+    else:
+        reply = await ai.chat(messages, max_tokens=max_tokens)
+        if not reply:
+            reply = "Lo siento. Los reactores no responden en este momento."
+
+        # Si el modelo habló de hora sin etiqueta, forzamos dato real al final no hace falta;
+        # expandimos etiquetas siempre.
+        # Si preguntó la hora y no usó [hora], reescribimos respuesta corta.
+        if re.search(r"\bhora\b|\bqu[eé]\s+hora\b", request.message, re.IGNORECASE):
+            if "[hora]" not in reply.lower() and not re.search(r"\d{1,2}:\d{2}", reply):
+                reply = "Son las [hora], señor."
 
     # Expandir etiquetas [hora], [fecha], [clima:..], [red], etc.
     reply = await expand_tags(
